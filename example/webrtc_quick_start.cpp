@@ -77,7 +77,10 @@ int main() {
             return;
         }
         std::printf("a: the channel is open\n");
-        chat.send_text("hello");
+        if (const error_code sent = chat.send_text("hello"); sent) {
+            std::printf("a: hello not sent: %s\n", sent.message().c_str());
+            return;
+        }
         chat.async_receive(buffer_a, [&](error_code ec, std::size_t, bool) {
             if (ec) {
                 return;
@@ -97,7 +100,9 @@ int main() {
                 return;
             }
             std::printf("b received: %s (%s)\n", at_b.c_str(), text ? "text" : "binary");
-            remote->send_text("hi");
+            if (const error_code sent = remote->send_text("hi"); sent) {
+                std::printf("b: hi not sent: %s\n", sent.message().c_str());
+            }
         });
     });
     // end::channel[]
@@ -121,7 +126,12 @@ int main() {
                         }
                         gather(b, [&] {
                             const auto answer = b.local_description().value();
-                            a.async_set_remote_description(answer.view(), [](error_code) {});
+                            a.async_set_remote_description(answer.view(), [](error_code ec) {
+                                if (ec) {
+                                    std::printf("a: the answer was refused: %s\n",
+                                                ec.message().c_str());
+                                }
+                            });
                         });
                     });
             });

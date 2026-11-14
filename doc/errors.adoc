@@ -10,7 +10,9 @@
 Every failure is a value. An operation completes with a
 `boost::system::error_code`; `make` and `create_data_channel` return a
 `boost::system::result`; `send` returns an `error_code`. None throws, with
-exceptions on or off, and none blocks.
+exceptions on or off, and none waits on the network; natively
+`async_set_local_description` makes the description in the call, which waits
+for the connection's DTLS certificate, milliseconds the first time.
 
 [#webrtc-errors-category]
 === The category `webcpp.webrtc`
@@ -25,7 +27,7 @@ values are fixed and never reused, and five of them are the W3C's
 
 | `invalid_state` (1) | The W3C's `InvalidStateError`: a candidate before a remote description, a send on a channel that is not open, an operation on a closed connection.
 | `operation_error` (2) | The W3C's `OperationError`: the platform refused an operation, as a description it cannot parse.
-| `invalid_access` (3) | The W3C's `InvalidAccessError`.
+| `invalid_access` (3) | The W3C's `InvalidAccessError`, which a browser reports; never natively.
 | `type_error` (4) | The W3C's `TypeError`: an argument out of its range, as both reliability limits of one channel.
 | `syntax_error` (5) | The W3C's `SyntaxError`: an ICE server URL that cannot be parsed.
 | `closed` (6) | The channel or the connection closed under a pending operation.

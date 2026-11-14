@@ -23,12 +23,13 @@ answer when a remote offer was applied. It completes with the description, a
 peer, which applies it with `async_set_remote_description(d.view())`. The
 peer that offers sends first; the other answers once the offer is applied.
 
-A description needs something to negotiate, so a peer creates its data
-channels before it offers. Adding a channel later does not negotiate by
-itself: the program calls `async_set_local_description()` again, and the
-peers exchange an offer and an answer once more. The W3C's `createOffer()`,
-`createAnswer()` and `negotiationneeded` are not part of webrtc
-(<<webrtc-differences>>).
+A description needs something to negotiate, so a peer creates its first
+data channel before it offers: the description then holds the connection's
+data section, which every later channel shares. A channel created once the
+connection is up opens over it at once, on both peers, with no new offer or
+answer, as in a browser, where only a connection's first channel needs
+negotiation. The W3C's `createOffer()`, `createAnswer()` and
+`negotiationneeded` are not part of webrtc (<<webrtc-differences>>).
 
 `local_description()` is the local description as it is now, with the
 candidates gathered so far; `has_remote_description()` says whether a remote

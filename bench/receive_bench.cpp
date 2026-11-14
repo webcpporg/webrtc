@@ -18,13 +18,15 @@
 // round is drained, before it counts.
 //
 // The C++ API throws, so this program needs exceptions; the library does not (design.md, D4).
-// Built with WEBCPP_BENCH_SMOKE it runs one or two rounds of each, as test/Jamfile's bench.
+// Built with WEBCPP_TEST_WEBRTC_BENCH_SMOKE it runs one or two rounds of each, as test/Jamfile's
+// bench. A fault ends the program with its reason on standard error and the exit status 1.
 
 #include <webcpp/webrtc.hpp>
 #include <webcpp/webrtc/detail/native/channel.hpp>
 
 #include <rtc/rtc.h>
-#include <rtc/rtc.hpp>
+#include <rtc/datachannel.hpp>
+#include <rtc/peerconnection.hpp>
 
 #include <webcpp/asio/buffer.hpp>
 
@@ -339,10 +341,12 @@ void compare(std::size_t total, std::size_t size) {
 
 }  // namespace
 
-int main() {
+// A fault is reported and fails the run, rather than ending it in std::terminate, whose abort()
+// can stop a Windows run on a dialog.
+int main() try {
     // libdatachannel's process-wide state, as a program holds it (design.md, D6).
     const webcpp::webrtc::runtime rt;
-#ifdef WEBCPP_BENCH_SMOKE
+#ifdef WEBCPP_TEST_WEBRTC_BENCH_SMOKE
     compare(2000, 1024);
     compare(200, 65536);
 #else
@@ -350,4 +354,10 @@ int main() {
     compare(100000, 65536);
 #endif
     return 0;
+} catch (const std::exception& e) {
+    std::fprintf(stderr, "%s\n", e.what());
+    return 1;
+} catch (...) {
+    std::fprintf(stderr, "receive_bench: an exception that is no std::exception\n");
+    return 1;
 }

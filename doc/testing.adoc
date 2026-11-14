@@ -82,9 +82,10 @@ include::{library-root}/test/Jamfile[tag=native]
   of each path, each message checked.
 |===
 
-From the root of a webcpp checkout, each of these builds and runs the
-tests and the examples, natively, without exceptions, and under the
-sanitizers:
+From the root of a webcpp checkout, the first two of these build and run
+the tests and the examples natively, as the build asks and without
+exceptions, and the third runs the tests under AddressSanitizer and
+UndefinedBehaviorSanitizer:
 
 [source,bash]
 ----
@@ -93,9 +94,10 @@ b2 threading=multi exception-handling=off libs/webrtc/test libs/webrtc/example
 b2 threading=multi address-sanitizer=norecover undefined-sanitizer=norecover libs/webrtc/test
 ----
 
-The lifetime test runs under ThreadSanitizer too, 100 rounds, which checks
-webrtc's side of every hand-off between libdatachannel's threads and the
-executor; libdatachannel's archives are not instrumented:
+The lifetime and native tests run under ThreadSanitizer too, the lifetime
+test for 100 rounds, which checks webrtc's side of every hand-off between
+libdatachannel's threads and the executor; libdatachannel's archives are not
+instrumented:
 
 [source,bash]
 ----

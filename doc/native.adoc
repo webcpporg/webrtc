@@ -73,14 +73,17 @@ the copy into the caller's buffer that both ways make.
 
 `bench/receive_bench.cpp` measures it: each round fills the receiver's queue
 with 1,000 messages from a peer on the loopback, then drains them, through
-webrtc's own read and through the {cpp} API's `receive()` and a copy into
+the function `async_receive` reads with, its two calls of
+`rtcReceiveMessage`, and through the {cpp} API's `receive()` and a copy into
 the same buffer, and the time each round took to arrive is measured too.
+What `async_receive` adds around the read, its operation and the posted
+completion, is not part of either.
 On 2026-11-14, on macOS 27.0 on arm64 with Apple clang 21, in release, for
 100,000 binary messages of each size:
 
 [cols="1,2,2,1,2",options="header"]
 |===
-| Size | webrtc, messages a second | `receive()`, messages a second | Time | Arrival on the loopback
+| Size | webrtc's read, messages a second | `receive()`, messages a second | Time | Arrival on the loopback
 
 | 1 KiB | 4,371,163, 4 allocations each | 12,758,633, none | 2.9 times | 71 MB/s, about 69,000 a second
 | 64 KiB | 131,446, 4 allocations each | 632,404, none | 4.8 times | 124 MB/s, about 1,900 a second
@@ -102,6 +105,7 @@ b2 threading=multi libs/webrtc/bench//results
 
 Some of libdatachannel's constants shape what a program sees, and are checked
 again whenever the pinned commit moves: its receive queue of 1,024 messages
-a channel (`RECV_QUEUE_LIMIT`), the local message size it announces by
-default, 256 KiB, which `options::max_message_size` sets, and the size it
-assumes of a peer that announces none, 64 KiB.
+a channel (`RECV_QUEUE_LIMIT`), the 1,024 SCTP streams it negotiates, so as
+many channels a connection (`MAX_SCTP_STREAMS_COUNT`), the local message size
+it announces by default, 256 KiB, which `options::max_message_size` sets,
+and the size it assumes of a peer that announces none, 64 KiB.

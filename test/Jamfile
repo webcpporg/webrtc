@@ -59,5 +59,5 @@ webcpp.run stall : stall_test.cpp : <library>/webcpp/webrtc//webrtc <threading>m
 # building and right. Its comparison uses libdatachannel's C++ API, which
 # throws: it alone needs exceptions.
 webcpp.run bench : ../bench/receive_bench.cpp
-  : <define>WEBCPP_BENCH_SMOKE <library>/webcpp/webrtc//webrtc <threading>multi
+  : <define>WEBCPP_TEST_WEBRTC_BENCH_SMOKE <library>/webcpp/webrtc//webrtc <threading>multi
     <exception-handling>on : native ;

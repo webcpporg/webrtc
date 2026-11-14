@@ -17,7 +17,9 @@ static mutable state, so the program owns it, as a `runtime`:
   reference, so no connection exists without one;
 * natively, making it loads libdatachannel's global resources, with its
   thread pool of `runtime_options::thread_pool_size` threads when that is not
-  0, and destroying it waits until libdatachannel's threads have stopped;
+  0, and destroying it waits until libdatachannel's threads have stopped, for
+  at most ten seconds, after which libdatachannel gives up and the program
+  goes on;
 * it caps the connections alive at once at
   `runtime_options::max_peer_connections`, 256 by default, half of
   Chromium's limit of 500 per page: `make` past the cap fails with

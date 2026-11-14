@@ -8,8 +8,10 @@
 == Data channels
 
 A `data_channel` carries messages between two peers over their connection,
-each message whole, text or binary. A connection holds any number of them,
-each with its own label and its own reliability.
+each message whole, text or binary. A connection holds many of them, each
+with its own label and its own reliability: natively up to 1,024, the SCTP
+streams libdatachannel negotiates, so a negotiated channel's `id` is under
+1,024 there.
 
 [#webrtc-channels-making]
 === Making one

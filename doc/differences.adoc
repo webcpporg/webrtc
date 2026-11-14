@@ -29,8 +29,9 @@ implementation will be the first to use the rule.
   does; libdatachannel cannot apply a description made apart from it.
 
 | `negotiationneeded`
-| Not offered: a program negotiates again when it adds a channel to a
-  connection that is up. Natively automatic negotiation is off, so a
+| Not offered: only a connection's first data channel needs negotiation, and
+  a program creates it before it offers; later channels open over the same
+  connection without one. Natively automatic negotiation is off, so a
   description exists only when a program asks for one, on both targets.
 
 | `configuration::bind_address`
@@ -38,8 +39,9 @@ implementation will be the first to use the rule.
   a program on the loopback needs. A browser cannot honour it.
 
 | a local candidate's `sdp_m_line_index` and `username_fragment`
-| Natively libdatachannel gives neither: both are empty, and its `sdp_mid`
-  is enough for a peer, a browser included.
+| Natively libdatachannel gives neither: webrtc sets `sdp_m_line_index` to
+  0, the connection's one data section, and leaves `username_fragment`
+  empty; the `sdp_mid` is enough for a peer, a browser included.
 
 | a remote candidate's `username_fragment`
 | Natively ignored, whatever the policy: libdatachannel makes one ICE
@@ -56,7 +58,8 @@ implementation will be the first to use the rule.
 | a received message past `options::max_message_size`
 | A peer that keeps to the size announced in the description never sends
   one. Natively libdatachannel truncates one that comes anyway to that size,
-  with a warning in its log, and webrtc delivers what it kept.
+  silently, since webrtc installs no logger for it, and webrtc delivers what
+  it kept.
 
 | unread messages
 | Natively they wait in libdatachannel's queue of 1,024 messages a channel,
