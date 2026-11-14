@@ -1,0 +1,63 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+
+# The interop lane (design.md, D18; plan, Task 2.7): a native peer and a
+# peer in headless Chromium connect to each other, signalled through a relay
+# on 127.0.0.1 over webcpp::beast's WebSocket, which carries each description
+# and candidate as the W3C's JSON. The native peer binds to 127.0.0.1 and has
+# no STUN server; Chromium runs with --allow-loopback-in-peer-connection and
+# --disable-features=WebRtcHideLocalIpsWithMdns. The native peer sends
+# "ping", the page answers "pong". run.mjs drives every part:
+#
+#   interop_native   two native peers meet through the relay: the relay and
+#                    the native peer proved without a browser
+#   interop_browser  the native peer meets the page's peer, in the JSPI and
+#                    the Asyncify variants, both from one manifest
+#
+# They run as the own lane interop, natively and on emscripten:
+#
+#   b2 threading=multi libs/webrtc/test/interop//interop
+#   b2 toolset=emscripten libs/webrtc/test/interop//interop
+#
+# The emscripten run meets the native program, which a native build makes
+# first: b2 threading=multi libs/webrtc/test/interop//native-program, or the
+# path WEBCPP_WEBRTC_INTEROP_NATIVE names (run.mjs). Playwright is pinned by
+# package.json and package-lock.json; the browser is the Chrome that CHROME
+# names, else, on macOS, the newest Chromium in Playwright's cache.
+
+# The page's program takes its libraries itself: the driven test that serves
+# it must not inherit them.
+project : requirements -<library>/webcpp/webrtc//headers ;
+
+import webcpp ;
+
+webcpp.targets native emscripten ;
+
+webcpp.original node ;
+
+# The native side, one program: the relay, or a native peer (native.cpp),
+# linked by every native build, and its explicit target native-program, which
+# the native driven test runs and the emscripten run meets. A driven test is
+# built again at every run, so it reuses that program rather than compile
+# native.cpp each time. libdatachannel's threads need threading=multi.
+webcpp.link native : native.cpp
+  : <library>/webcpp/webrtc//webrtc <library>/webcpp/beast//sockets
+    <library>/webcpp//boost_json <threading>multi
+  : native ;
+
+webcpp.drive interop_native : .//native-program : <webcpp-drive-timeout>120
+  : run.mjs : --native : native ;
+
+# The page's peer, in both suspension variants (browser_peer.cpp).
+webcpp.variants browser_peer : browser_peer.cpp
+  : <library>/webcpp/webrtc//webrtc <library>/webcpp/beast//browser
+    <library>/webcpp//boost_json ;
+
+webcpp.drive interop_browser : .//browser_peer
+  : <dependency>browser_peer.variants.json <dependency>page.html <webcpp-drive-timeout>300
+  : run.mjs : --browser : emscripten ;
+
+webcpp.lane interop : interop_native interop_browser : native emscripten ;

@@ -126,3 +126,7 @@ webcpp.run browser_backend_no_exceptions : browser_backend_test.cpp
 # The browser lane: two peers in one page of headless Chrome, both suspension
 # variants, with exceptions on and off (test/browser/Jamfile).
 build-project browser ;
+
+# The interop lane: a native peer and a peer in headless Chrome, signalled
+# through a local relay over webcpp::beast's WebSocket (test/interop/Jamfile).
+build-project interop ;

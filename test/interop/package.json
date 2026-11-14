@@ -1,0 +1,10 @@
+{
+  "name": "webcpp-webrtc-interop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "webcpp::webrtc's interop lane: run.mjs drives headless Chromium through Playwright, pinned as document's benchmarks pin it.",
+  "devDependencies": {
+    "playwright": "1.59.0"
+  }
+}
