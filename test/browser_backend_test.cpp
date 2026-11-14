@@ -19,9 +19,11 @@
 #include <webcpp/webrtc/peer_connection.hpp>
 #include <webcpp/webrtc/runtime.hpp>
 
-#include <webcpp/asio/buffer.hpp>      // lint-world: a receive's dynamic buffer
-#include <webcpp/asio/error.hpp>       // lint-world: Asio's codes
-#include <webcpp/asio/io_context.hpp>  // lint-world: the test's event loop
+#include <webcpp/asio/bind_cancellation_slot.hpp>  // lint-world: an operation's cancellation
+#include <webcpp/asio/buffer.hpp>                  // lint-world: a receive's dynamic buffer
+#include <webcpp/asio/cancellation_signal.hpp>     // lint-world: an operation's cancellation
+#include <webcpp/asio/error.hpp>                   // lint-world: Asio's codes
+#include <webcpp/asio/io_context.hpp>              // lint-world: the test's event loop
 
 #include <webcpp/test/exit_status.hpp>
 
@@ -358,6 +360,80 @@ void arrivals_keep_their_order() {
     fire(last_connection(), "onicecandidate", event);
     settle(io);
     BOOST_TEST((order == std::vector<std::string>{"offer", "candidate"}));
+}
+
+// A close while a notification is in flight: what the browser staged before it is delivered to
+// nothing, the waits end with operation_aborted, and the state reads closed (design.md, D8, D13).
+void a_close_while_a_notification_is_in_flight() {
+    asio::io_context io;
+    webrtc::runtime rt;
+    auto made = connection::make(rt, io.get_executor(), no_servers);
+    if (!BOOST_TEST(made.has_value())) {
+        return;
+    }
+    connection& pc = *made;
+    std::optional<error_code> candidate;
+    pc.async_wait_ice_candidate(
+        [&](error_code ec, const connection::ice_candidate&) { candidate = ec; });
+    const val fake = last_connection();
+    set_state(fake, "connectionState", "connected", "onconnectionstatechange");
+    val end = val::object();
+    end.set("candidate", val::null());
+    fire(fake, "onicecandidate", end);
+    pc.close();
+    settle(io);
+    BOOST_TEST(candidate && *candidate == asio::error::operation_aborted);
+    BOOST_TEST(pc.state() == webrtc::peer_connection_state::closed);
+}
+
+// A description's operation and a candidate's support terminal cancellation alone in the browser:
+// each completes with operation_aborted, the browser's promise still settles, and what it applied
+// stays applied, but its settlement finds no operation (design.md, D11).
+void cancelled_promises() {
+    asio::io_context io;
+    webrtc::runtime rt;
+    auto made = connection::make(rt, io.get_executor(), no_servers);
+    if (!BOOST_TEST(made.has_value())) {
+        return;
+    }
+    connection& pc = *made;
+    val::global().set("holding", val(true));
+    std::array<asio::cancellation_signal, 4> signals;
+    std::array<std::vector<error_code>, 4> results;
+    pc.async_set_local_description(asio::bind_cancellation_slot(
+        signals[0].slot(),
+        [&](error_code ec, const connection::session_description&) { results[0].push_back(ec); }));
+    pc.async_set_remote_description(
+        {.type = webrtc::sdp_type::offer, .sdp = "v=0 remote"},
+        asio::bind_cancellation_slot(signals[1].slot(),
+                                     [&](error_code ec) { results[1].push_back(ec); }));
+    pc.async_add_ice_candidate({.candidate = "candidate:4", .sdp_mid = "0"},
+                               asio::bind_cancellation_slot(signals[2].slot(), [&](error_code ec) {
+                                   results[2].push_back(ec);
+                               }));
+    pc.async_add_ice_candidate({.candidate = "candidate:5", .sdp_mid = "0"},
+                               asio::bind_cancellation_slot(signals[3].slot(), [&](error_code ec) {
+                                   results[3].push_back(ec);
+                               }));
+    for (std::size_t i = 0; i < 3; ++i) {
+        signals.at(i).emit(asio::cancellation_type::terminal);
+    }
+    // A partial cancellation is not supported, and changes nothing.
+    signals[3].emit(asio::cancellation_type::partial);
+    settle(io);
+    for (std::size_t i = 0; i < 3; ++i) {
+        BOOST_TEST((results.at(i) == std::vector<error_code>{asio::error::operation_aborted}));
+    }
+    BOOST_TEST(results[3].empty());
+    val::global().set("holding", val(false));
+    val::global("releaseHeld")();
+    settle(io);
+    for (std::size_t i = 0; i < 3; ++i) {
+        BOOST_TEST_EQ(results.at(i).size(), 1u);
+    }
+    BOOST_TEST((results[3] == std::vector<error_code>{error_code{}}));
+    BOOST_TEST(pc.has_remote_description());
+    BOOST_TEST(pc.local_description().has_value());
 }
 
 // A send is refused, and the channel stays open, when it is not open, past max_message_size or
@@ -787,6 +863,8 @@ int main() {
     descriptions_follow_promises();
     candidates_follow_promises();
     arrivals_keep_their_order();
+    a_close_while_a_notification_is_in_flight();
+    cancelled_promises();
     sends_and_their_refusals();
     messages_and_the_buffer();
     the_budget_or_the_size(false);
