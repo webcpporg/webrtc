@@ -19,14 +19,14 @@ the names and the shapes of the W3C's WebRTC API, `RTCPeerConnection` and
 `RTCDataChannel`, and they are written in Asio's model: every operation takes
 a completion token, runs its handler on the executor its object was made
 with, and fails as a value. Natively it runs over libdatachannel; in the
-browser, from a later version, over the browser's own objects, so that a
+browser, compiled with Emscripten, over the page's own objects, so that a
 program is written once for both.
 
 This page teaches webrtc section by section: two peers that talk, how a
 program builds with it, the runtime, signalling, the events, the data
-channels, the errors, cancellation and memory, what the native
-implementation stands on, how it differs from the W3C's API, and what it
-guarantees. Every program it shows is one of the library's examples, which
+channels, the errors, cancellation and memory, what the native and the
+browser implementations stand on, how it differs from the W3C's API, and
+what it guarantees. Every program it shows is one of the library's examples, which
 the build compiles, runs and compares with the output shown. The
 <<reference,reference>> lists every name the headers declare.
 
@@ -51,6 +51,8 @@ include::cancellation.adoc[]
 include::allocation.adoc[]
 
 include::native.adoc[]
+
+include::browser.adoc[]
 
 include::differences.adoc[]
 

@@ -16,8 +16,8 @@ What a target cannot honour follows one rule: by default it fails with
 only where the platform does something equivalent of its own. The feature is
 propagated, so a whole program agrees, and setting both
 `WEBCPP_WEBRTC_UNSUPPORTED_ERROR` and `WEBCPP_WEBRTC_UNSUPPORTED_IGNORE`
-stops the build. Natively every setting is honoured; the browser
-implementation will be the first to use the rule.
+stops the build. Natively every setting is honoured; in the browser the rule
+decides `configuration::bind_address` (<<webrtc-browser-policy>>).
 
 [cols="2,3",options="header"]
 |===
@@ -36,12 +36,15 @@ implementation will be the first to use the rule.
 
 | `configuration::bind_address`
 | Not a W3C setting: natively, the one local address ICE binds to, which
-  a program on the loopback needs. A browser cannot honour it.
+  a program on the loopback needs. A browser cannot honour it: `make` fails
+  with `operation_not_supported`, or ignores it under
+  `webcpp-webrtc-unsupported=ignore`.
 
 | a local candidate's `sdp_m_line_index` and `username_fragment`
 | Natively libdatachannel gives neither: webrtc sets `sdp_m_line_index` to
   0, the connection's one data section, and leaves `username_fragment`
-  empty; the `sdp_mid` is enough for a peer, a browser included.
+  empty; the `sdp_mid` is enough for a peer, a browser included. In the
+  browser a candidate carries all four members.
 
 | a remote candidate's `username_fragment`
 | Natively ignored, whatever the policy: libdatachannel makes one ICE
@@ -50,22 +53,38 @@ implementation will be the first to use the rule.
   still reaches it. A browser peer's candidates carry the field, so refusing
   it would refuse them.
 
-| a text message holding a zero byte
-| Natively not sent, `operation_not_supported` whatever the policy: the C API
-  takes a text as a zero-terminated string, and cutting the message short
-  silently is never what a program asked for.
+| a text message holding a zero byte, or not UTF-8
+| Natively a zero byte is not sent, `operation_not_supported` whatever the
+  policy: the C API takes a text as a zero-terminated string, and cutting the
+  message short silently is never what a program asked for. In the browser a
+  zero byte is sent, and a text that is not valid UTF-8 fails with
+  `type_error`, since the browser sends a JavaScript string.
 
 | a received message past `options::max_message_size`
 | A peer that keeps to the size announced in the description never sends
   one. Natively libdatachannel truncates one that comes anyway to that size,
   silently, since webrtc installs no logger for it, and webrtc delivers what
-  it kept.
+  it kept. In the browser the channel closes, and `async_receive` completes
+  with `message_too_large`.
 
 | unread messages
 | Natively they wait in libdatachannel's queue of 1,024 messages a channel,
   which slows the peer down when it is full, and stalls the connection's
   other channels until the channel is read or closed
-  (<<webrtc-channels-receiving>>).
+  (<<webrtc-channels-receiving>>). The browser has no flow control on
+  receipt: past `options::max_received_bytes` the channel closes with
+  `receive_overflow` (<<webrtc-browser-receiving>>).
+
+| messages sent just before a channel is closed
+| Natively they are delivered before the close. Chrome 156 may not deliver
+  them at all when the sender closes the channel at once after sending them,
+  as a page of plain JavaScript shows too; a sender that needs them read
+  waits for the peer to say so before it closes.
+
+| `runtime::peer_connections()` and the cap
+| Natively the connections made with the runtime and not destroyed. In the
+  browser the page's census, every connection of the page until it is
+  garbage-collected (<<webrtc-browser-census>>).
 
 | `RTCPeerConnection` and `RTCDataChannel` themselves
 | No native handle, an `rtc` id or a browser object, appears in a public

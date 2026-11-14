@@ -54,7 +54,11 @@ its messages wait. A program reads every channel it holds, or closes it.
 Closing or destroying a channel discards what it holds unread, as the W3C
 discards what arrives once a channel left `open`, and releases the others;
 messages that arrived before the peer closed the channel are still
-delivered, then `async_receive` completes with `error::closed`.
+delivered, then `async_receive` completes with `error::closed`. *In the
+browser* the queue is webrtc's, bounded in bytes by
+`options::max_received_bytes`, since the browser has no flow control on
+receipt: past it the channel closes with `receive_overflow`
+(<<webrtc-browser-receiving>>).
 
 [#webrtc-channels-sending]
 === Sending

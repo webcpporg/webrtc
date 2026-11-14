@@ -35,4 +35,6 @@ object that owns its connections, and passes it down; a test makes one per
 case, one case after another.
 
 The connections made with one runtime may live on different executors and
-threads; its count is atomic.
+threads; its count is atomic. In the browser the cap counts the page's census
+instead, every connection of the page until it is collected
+(<<webrtc-browser-census>>), and `thread_pool_size` means nothing.

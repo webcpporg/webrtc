@@ -23,10 +23,12 @@ one case after another (<<webrtc-runtime>>).
 === How webrtc is tested
 
 webrtc's tests are under `test/`, each declared in `test/Jamfile`, and each
-guarantee of <<webrtc-guarantees>> names the tests that hold it. They run
-natively, {n-tests} tests in all, with every connection on the loopback and
-no STUN, so that a lane with no network but the loopback runs them whole. The
-native suite runs as the build asks and without exceptions:
+guarantee of <<webrtc-guarantees>> names the tests that hold it. They run on
+two targets, {n-tests} tests in all, {n-tests-native} natively and
+{n-tests-emscripten} on emscripten, under Node and in headless Chrome, with
+every connection on the loopback and no STUN, so that a lane with no network
+but the loopback runs them whole. The native suite runs as the build asks and
+without exceptions:
 
 [listing]
 ----
@@ -80,6 +82,25 @@ include::{library-root}/test/Jamfile[tag=native]
 | `bench`
 | The receive benchmark's smoke pass (<<webrtc-native-cost,what reading a message costs>>): a few rounds
   of each path, each message checked.
+
+| `browser_imports`, `browser_runtime`, `browser_backend`
+| On emscripten, under Node, which has no `RTCPeerConnection`: the browser
+  calls catch what JavaScript throws and report it by name, never
+  re-entering {cpp}; the census and the cap, a slot freed once a connection
+  is collected; and the browser implementation's semantics over a fake
+  connection and channel of the test's own, each with exceptions off too.
+
+| `browser_policy`, `config_boundary`, `config_mismatch`
+| `bind_address` under each policy, and two translation units with
+  different policies that fail to link when they pass a channel between
+  them.
+
+| the `browser` lane
+| Two peers in one page of headless Chrome (`test/browser/`): every native
+  case that applies and the browser's own, the receive budget and the size
+  limit, refused sends, the close paths, allocation through a counting
+  resource and `bind_address`, each program in both suspension variants and
+  with exceptions off.
 |===
 
 From the root of a webcpp checkout, the first two of these build and run
@@ -94,6 +115,18 @@ b2 threading=multi exception-handling=off libs/webrtc/test libs/webrtc/example
 b2 threading=multi address-sanitizer=norecover undefined-sanitizer=norecover libs/webrtc/test
 ----
 
+On emscripten the tests run under Node, and the `browser` lane in headless
+Chrome, which `CHROME` names, else Playwright's cached Chromium on macOS. The
+lane starts Chrome with `--disable-features=WebRtcHideLocalIpsWithMdns`, so
+that a page's host candidates are its addresses, and checks first, with two
+peers of plain JavaScript, that the browser connects at all:
+
+[source,bash]
+----
+b2 toolset=emscripten webcpp-suspend=jspi libs/webrtc/test
+b2 toolset=emscripten webcpp-suspend=asyncify libs/webrtc/test
+----
+
 The lifetime and native tests run under ThreadSanitizer too, the lifetime
 test for 100 rounds, which checks webrtc's side of every hand-off between
 libdatachannel's threads and the executor; libdatachannel's archives are not
@@ -106,5 +139,6 @@ b2 threading=multi thread-sanitizer=on define=WEBCPP_TEST_WEBRTC_REPEAT=100 libs
 
 b2 compares timestamps, so a result that counts is built from scratch, with
 `b2 -a`. The CI runs the tests on every native compiler of webcpp's lanes,
-GCC, Clang on `libstdc++`, Apple Clang and MSVC, and the test matrix of every
-run is at https://webcpporg.github.io/report/.
+GCC, Clang on `libstdc++`, Apple Clang and MSVC, and on emscripten, the
+`browser` lane with its pinned Chrome, and the test matrix of every run is at
+https://webcpporg.github.io/report/.

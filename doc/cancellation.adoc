@@ -27,9 +27,14 @@ operation states the types of cancellation it supports:
   applied, after the handler ran, since the platform's own operation cannot
   be called back
 
-| `async_add_ice_candidate`, `async_send`, `async_send_text`
+| `async_send`, `async_send_text`, and natively `async_add_ice_candidate`
 | terminal, partial, total
 | none in practice: each completes at once, posted
+
+| `async_add_ice_candidate`, in the browser
+| terminal
+| completes it with `operation_aborted`; the candidate may still be added,
+  since the browser's promise cannot be called back
 |===
 
 A cancellation of a type an operation does not support is ignored, as Asio

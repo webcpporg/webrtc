@@ -73,18 +73,19 @@ public:
     */
     [[nodiscard]] const runtime_options& get_options() const noexcept { return options_; }
 
+    // A member, as natively, where it reads the runtime's own count; the page's lives in
+    // JavaScript.
+    // NOLINTBEGIN(readability-convert-member-functions-to-static)
     /**
      The peer connections of the page that count against the cap: made by webcpp::webrtc, with any
      runtime, and not yet freed by the garbage collector.
 
      @return Their number.
     */
-    // A member, as natively, where it reads the runtime's own count; the page's lives in
-    // JavaScript.
-    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     [[nodiscard]] std::size_t peer_connections() const noexcept {
         return detail::browser::census_held();
     }
+    // NOLINTEND(readability-convert-member-functions-to-static)
 
 private:
     runtime_options options_;

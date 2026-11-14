@@ -21,7 +21,12 @@ and its plan are in `proposals/libraries/webrtc/openspec/changes/genesis`.
   the io_context says why after `lint-run:`. Each suite runs as the build asks and, where it
   matters, with `<exception-handling>off`. The lifetime test runs under ThreadSanitizer with
   `thread-sanitizer=on define=WEBCPP_TEST_WEBRTC_REPEAT=100`.
-- **Increment 2** adds the browser implementation on webcpp::asio's bridge, following
-  webcpp::beast's browser WebSocket (design.md, D8); until then the headers that need a backend
-  (`runtime.hpp`, `data_channel.hpp`, `peer_connection.hpp`) stop with an `#error` on emscripten,
-  and the Jamfile declares native only.
+- **In the browser** (`detail/browser/`) each connection and channel is one
+  `intrusive_registration` of webcpp::asio's bridge, as webcpp::beast's browser WebSocket is
+  (design.md, D8): every call into the page is an `EM_ASM` function of `detail/browser/imports.hpp`
+  that catches JavaScript's exceptions in JavaScript and reports their name; `deliver` only
+  records and posts one notification per batch; a send is checked before the browser sees it.
+  The browser classes live in the unsupported policy's inline namespace (D14). Under Node, which
+  has no `RTCPeerConnection`, tests use a fake of their own (`test/browser_backend_test.cpp`);
+  real-browser behaviour is the `browser` lane's (`test/browser/`, headless Chrome).
+- **Increment 3** moves trystero's WebRTC onto this library, a change of trystero's.

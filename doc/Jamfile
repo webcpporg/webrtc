@@ -8,6 +8,12 @@ import webcpp ;
 
 webcpp.doc webrtc : webrtc.adoc ;
 
-# The headers read libdatachannel's C API natively, whose include directory
-# and RTC_STATIC the library's target gives, with the threading it needs.
-webcpp.reference webrtc : <library>/webcpp/webrtc//webrtc <threading>multi ;
+# No single target builds every header: the browser backend's build only on
+# emscripten, whose own headers hold only for wasm32's types, so the reference
+# reads every header for Emscripten's target, as em++ compiles
+# (/webcpp//emscripten-reference), with the library's native target, whose
+# libdatachannel include directory the native backend's headers read, and the
+# define webcpp::asio's browser build gives, which a requirement conditioned
+# on the emscripten toolset does not give a reference.
+webcpp.reference webrtc : <library>/webcpp/webrtc//webrtc <threading>multi
+  <library>/webcpp//emscripten-reference <define>BOOST_ASIO_DISABLE_THREADS ;

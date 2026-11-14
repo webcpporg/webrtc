@@ -30,14 +30,13 @@ W3C's where a platform allows them, with every difference stated in
   or one of Asio's (<<webrtc-errors>>), and every bound webcpp sets is a
   named option that fails as a value, never by throwing or blocking.
 
-It runs natively today, over libdatachannel 0.24.6, which the superproject
-builds from its pinned sources (<<webrtc-native>>), with exceptions on and
-off. The browser implementation, over the page's own `RTCPeerConnection`
-through webcpp::asio's bridge, comes in the library's next increment, with
-a lane where a native peer and a browser peer talk to each other; until then
-a header that needs a backend stops with `#error` on emscripten. WASI has no
-WebRTC, neither in a guest nor from a host, so there the headers stop with an
-`#error` that says so.
+It runs on two targets, with exceptions on and off on both. Natively it runs
+over libdatachannel 0.24.6, which the superproject builds from its pinned
+sources (<<webrtc-native>>). In the browser, compiled with Emscripten, it
+runs over the page's own `RTCPeerConnection` and `RTCDataChannel`, through
+webcpp::asio's bridge, in both of webcpp::asio's suspension variants
+(<<webrtc-browser>>). WASI has no WebRTC, neither in a guest nor from a host,
+so there the headers stop with an `#error` that says so.
 
 Media, the tracks, codecs and transceivers of WebRTC, is not part of
 webrtc: it will get an interface of its own. Nor is any integration with

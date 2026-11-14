@@ -8,8 +8,8 @@ API, `RTCPeerConnection` and `RTCDataChannel`, written in Asio's model: every
 operation takes a completion token and runs its handler on the executor its
 object was made with, every event is a wait the program starts again, and
 every failure is a value. It runs natively over libdatachannel, through its C
-API, with exceptions on and off; the browser implementation, over the page's
-own `RTCPeerConnection`, comes next. Media is out of scope.
+API, and in the browser, compiled with Emscripten, over the page's own
+`RTCPeerConnection`, with exceptions on and off on both. Media is out of scope.
 
 <!-- include::example/webrtc_quick_start.cpp[tag=make,indent=0] -->
 ```cpp
@@ -41,7 +41,11 @@ developed inside Boost:
 
 builds the tests and the examples natively, runs every example and compares
 its output with the `.expected` file beside it; `exception-handling=off`
-does the same without exceptions. `b2 threading=multi
+does the same without exceptions. `toolset=emscripten webcpp-suspend=jspi
+libs/webrtc/test` (or `asyncify`) runs the tests on emscripten under Node,
+and `toolset=emscripten webcpp-suspend=jspi libs/webrtc/test/browser//browser`
+runs the browser lane: two peers in one page of headless Chrome, in both
+suspension variants. `b2 threading=multi
 libs/webrtc/bench//results` measures what reading a message costs.
 
 ## Documentation

@@ -1,0 +1,89 @@
+// Copyright (c) 2026 WebCpp.org
+//
+// Distributed under the Boost Software License, Version 1.0. (See
+// accompanying file LICENSE_1_0.txt or copy at
+// https://www.boost.org/LICENSE_1_0.txt)
+
+[#webrtc-browser]
+== The browser implementation
+
+[#webrtc-browser-bridge]
+=== The page's objects, through webcpp::asio's bridge
+
+Compiled with Emscripten, webrtc runs over the page's own `RTCPeerConnection`
+and `RTCDataChannel`. Each connection and each channel is one registration of
+webcpp::asio's bridge, the service of the `io_context` through which the
+page's JavaScript events reach {cpp}: the browser's event handlers deliver
+to it, it records what arrived in the object's state and posts at most one
+notification for all of it, and the notification completes the waits on the
+executor. No handler of the program runs inside a JavaScript event, and an
+event reaches the program only while it has returned to the page's event
+loop or while `run()` is suspended, in either of webcpp::asio's suspension
+variants, `jspi` and `asyncify`.
+
+Every call into the browser is a JavaScript function that catches what the
+browser throws before it reaches WebAssembly and reports it by its
+`DOMException` name, so the browser implementation raises nothing of its own
+and works with exceptions on and off, as natively. A promise, as
+`setLocalDescription()` returns, is followed through the same bridge, whose
+event says how it settled. The names become values of `webcpp.webrtc`:
+`InvalidStateError`, `OperationError`, `InvalidAccessError`, `TypeError` and
+`SyntaxError` the value of the same name, any other `operation_error`.
+
+[#webrtc-browser-census]
+=== The page's census
+
+The browser keeps no count of its connections that a program could read, and
+Chromium refuses more than 500 on a page. So the page keeps a census of its
+own, in JavaScript: every `RTCPeerConnection` webrtc makes counts from its
+construction until a `FinalizationRegistry` sees it collected. The
+`max_peer_connections` of a `runtime` caps that census, and `peer_connections()` reads it:
+in the browser it counts every webrtc connection of the page, whatever
+runtime made it, until it is garbage-collected, not only until it is
+destroyed. `runtime_options::thread_pool_size` means nothing there.
+
+[#webrtc-browser-receiving]
+=== Receiving and sending
+
+The browser delivers every message it receives at once, with no flow
+control, so webrtc keeps a channel's unread messages in a queue bounded in
+bytes, in the channel's allocator: `options::max_received_bytes` counts each
+message's payload and the bookkeeping of its record, and is charged when the
+browser delivers the message, before the executor reads it, so that a busy
+or stopped `io_context` cannot make the page's memory grow. Past it, or when
+a received message passes `options::max_message_size`, the channel discards
+what it holds unread and closes: `ready_state()` reads `closing`, then
+`closed`, and `async_receive` completes with `receive_overflow` or
+`message_too_large`.
+
+A send is checked before the browser sees it, so a refused send leaves the
+channel open, as natively: the channel's live `readyState` first, then the
+smaller of `options::max_message_size` and the peer's `maxMessageSize`, then
+`options::max_buffered_amount`. A text must be valid UTF-8, since the
+browser sends a JavaScript string, or the send fails with `type_error`; it
+may hold a zero byte, which the native implementation refuses.
+
+[#webrtc-browser-candidates]
+=== Candidates
+
+A local candidate carries all four of the W3C's members, the media line's
+index and the user name fragment among them. The browser ends each gathering
+generation with an empty candidate of its own; webrtc delivers the end of
+gathering once, when the browser has nothing more to gather. An empty
+remote candidate completes `async_add_ice_candidate` at once without reaching
+the browser, as natively, and a non-empty one follows the browser's promise:
+the browser checks it in its own order of operations, so a candidate added
+while the remote description is still being applied is applied after it, and
+one added with no remote description fails with `invalid_state`.
+
+[#webrtc-browser-policy]
+=== What the browser cannot honour
+
+`configuration::bind_address` names the one local address ICE binds to,
+which a browser cannot choose. Under the default policy `make` fails with
+`operation_not_supported`; under `webcpp-webrtc-unsupported=ignore` the
+address is ignored. The browser's classes live in an inline namespace named
+after the policy, `unsupported_error` or `unsupported_ignore`, so their
+spelled names are the same, `webcpp::webrtc::peer_connection` among them, and
+two translation units built with different policies that pass an object
+between them fail to link instead of disagreeing at run time.

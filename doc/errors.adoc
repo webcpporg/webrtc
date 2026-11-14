@@ -60,6 +60,10 @@ the `io_context` while the other calls return their error at once:
 include::{examples}/webrtc_errors.expected[]
 ----
 
+In the browser a failure the browser reports arrives by its `DOMException`
+name, which becomes the value of the same name
+(<<webrtc-browser-bridge>>).
+
 [#webrtc-errors-native]
 === Natively
 

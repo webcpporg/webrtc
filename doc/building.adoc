@@ -43,15 +43,28 @@ b2 threading=multi libs/webrtc/example
 b2 threading=multi exception-handling=off libs/webrtc/example
 ----
 
+In the browser the same target brings webcpp::asio, whose usage requirements
+link its browser runtime (the bridge's export and JavaScript, which
+`<webcpp/asio/browser/src.hpp>` holds), embind and the flag of the suspension
+variant `webcpp-suspend` chooses, `jspi` or `asyncify`: a program built with
+b2 includes nothing more. A program built without b2 includes
+`<webcpp/asio/browser/src.hpp>` in exactly one translation unit and links
+with `-lembind`, `-sJSPI` (or `-sASYNCIFY` with JavaScript exceptions),
+`-Wl,--export=emscripten_stack_get_current` and
+`-Wl,--export=_emscripten_stack_restore`:
+
+[source,bash]
+----
+b2 toolset=emscripten webcpp-suspend=jspi libs/webrtc/test
+----
+
 The convenience header `<webcpp/webrtc.hpp>` includes every public header.
 `<webcpp/webrtc/config.hpp>` defines `WEBCPP_WEBRTC_NO_EXCEPTIONS` exactly
 when webcpp has no exceptions, as every webcpp library's configuration does,
-and stops with `#error` on WASI, where no WebRTC exists. On emscripten the
-headers that need a backend stop with `#error` until the browser
-implementation arrives.
+and stops with `#error` on WASI, where no WebRTC exists.
 
 The b2 feature `webcpp-webrtc-unsupported=error|ignore`, propagated, chooses
 what a setting a target cannot honour does: fail with
 `operation_not_supported`, the default, or be ignored
-(<<webrtc-differences>>). Natively every setting is honoured, so the feature
-changes nothing there yet.
+(<<webrtc-differences>>). Natively every setting is honoured; in the browser
+`configuration::bind_address` is the one it decides.

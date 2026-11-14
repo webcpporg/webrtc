@@ -20,6 +20,7 @@ every version are on webcpp's index page.
 model.
 * Added the native implementation over libdatachannel's C API, with
 exceptions on and off.
+* Added the browser implementation over the page's own `RTCPeerConnection`.
 * Added a runtime that holds libdatachannel's threads and caps connections.
 * Added errors as values, in the category `webcpp.webrtc` and Asio's codes.
 * Added the library's page, with its examples, guarantees and differences.
