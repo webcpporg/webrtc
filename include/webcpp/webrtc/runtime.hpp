@@ -79,6 +79,9 @@ public:
 
      @return Their number.
     */
+    // A member, as natively, where it reads the runtime's own count; the page's lives in
+    // JavaScript.
+    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     [[nodiscard]] std::size_t peer_connections() const noexcept {
         return detail::browser::census_held();
     }

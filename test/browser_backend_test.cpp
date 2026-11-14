@@ -40,8 +40,8 @@
 
 namespace webrtc = webcpp::webrtc;
 namespace asio = webcpp::asio;
+using boost::system::error_code;
 using emscripten::val;
-using error_code = boost::system::error_code;
 
 // clang-format off
 // The test's RTCPeerConnection, which keeps every instance in `connections`, and its
@@ -121,6 +121,9 @@ namespace {
 using connection = webrtc::peer_connection;
 using channel = webrtc::data_channel;
 
+// No ICE server: host candidates only.
+const webrtc::configuration no_servers;
+
 // Runs the posted completions and what the browser's promises settle, up to five seconds.
 void settle(asio::io_context& io) {
     io.restart();
@@ -155,7 +158,7 @@ void set_state(val pc, const char* name, const char* value, const char* handler)
 void connection_events() {
     asio::io_context io;
     webrtc::runtime rt;
-    auto made = connection::make(rt, io.get_executor(), {});
+    auto made = connection::make(rt, io.get_executor(), no_servers);
     if (!BOOST_TEST(made.has_value())) {
         return;
     }
@@ -213,17 +216,16 @@ void connection_events() {
 }
 
 // The description operations follow the browser's promises: a resolution completes them, a
-// rejection arrives by its name; a candidate is added with every member, and an empty one adds
-// none and completes at once.
-void descriptions_and_candidates() {
+// rejection arrives by its name, and a candidate before a remote description is refused by the
+// browser's own check.
+void descriptions_follow_promises() {
     asio::io_context io;
     webrtc::runtime rt;
-    auto made = connection::make(rt, io.get_executor(), {});
+    auto made = connection::make(rt, io.get_executor(), no_servers);
     if (!BOOST_TEST(made.has_value())) {
         return;
     }
     connection& pc = *made;
-    val fake = last_connection();
     std::optional<error_code> early;
     pc.async_add_ice_candidate({.candidate = "candidate:2", .sdp_mid = "0"},
                                [&](error_code ec) { early = ec; });
@@ -241,24 +243,39 @@ void descriptions_and_candidates() {
     BOOST_TEST(pc.local_description() && pc.local_description()->sdp == "v=0 local");
     BOOST_TEST(refused && *refused == webrtc::error::operation_error);
     BOOST_TEST(!pc.has_remote_description());
+}
 
+// Once a remote description is applied, a candidate is added with every member, and an empty one
+// adds none and completes at once.
+void candidates_follow_promises() {
+    asio::io_context io;
+    webrtc::runtime rt;
+    auto made = connection::make(rt, io.get_executor(), no_servers);
+    if (!BOOST_TEST(made.has_value())) {
+        return;
+    }
+    connection& pc = *made;
     std::optional<error_code> applied;
     pc.async_set_remote_description({.type = webrtc::sdp_type::answer, .sdp = "v=0 remote"},
                                     [&](error_code ec) { applied = ec; });
     std::optional<error_code> added;
-    pc.async_add_ice_candidate({.candidate = "candidate:3",
-                                .sdp_mid = "0",
-                                .sdp_m_line_index = 0,
-                                .username_fragment = "u"},
-                               [&](error_code ec) { added = ec; });
+    pc.async_add_ice_candidate(
+        {
+            .candidate = "candidate:3",
+            .sdp_mid = "0",
+            .sdp_m_line_index = 0,
+            .username_fragment = "u",
+        },
+        [&](error_code ec) { added = ec; });
+    const webrtc::ice_candidate_view end_of_candidates;
     std::optional<error_code> ended;
-    pc.async_add_ice_candidate({}, [&](error_code ec) { ended = ec; });
+    pc.async_add_ice_candidate(end_of_candidates, [&](error_code ec) { ended = ec; });
     settle(io);
     BOOST_TEST(applied && !*applied);
     BOOST_TEST(pc.has_remote_description());
     BOOST_TEST(added && !*added);
     BOOST_TEST(ended && !*ended);
-    const val candidates = fake["candidates"];
+    const val candidates = last_connection()["candidates"];
     if (BOOST_TEST_EQ(candidates["length"].as<int>(), 1)) {
         BOOST_TEST(candidates[0]["candidate"].strictlyEquals(val("candidate:3")));
         BOOST_TEST(candidates[0]["sdpMid"].strictlyEquals(val("0")));
@@ -276,7 +293,7 @@ void sends_and_their_refusals() {
     webrtc::options opts;
     opts.max_message_size = 16;
     opts.max_buffered_amount = 64;
-    auto made = connection::make(rt, io.get_executor(), {}, opts);
+    auto made = connection::make(rt, io.get_executor(), no_servers, opts);
     if (!BOOST_TEST(made.has_value())) {
         return;
     }
@@ -338,7 +355,7 @@ void sends_and_their_refusals() {
 void messages_and_the_buffer() {
     asio::io_context io;
     webrtc::runtime rt;
-    auto made = connection::make(rt, io.get_executor(), {});
+    auto made = connection::make(rt, io.get_executor(), no_servers);
     if (!BOOST_TEST(made.has_value())) {
         return;
     }
@@ -375,79 +392,86 @@ void messages_and_the_buffer() {
     BOOST_TEST_EQ(data, std::string("\x07\x07\x07h\xc3\xa9"));
 }
 
-// Past the receive budget, a message's payload and record counted, and past max_message_size,
-// the channel closes at once and receives fail with the cause; what was queued is discarded.
-void the_budget_and_the_size() {
+// Past the receive budget, a message's payload and record counted, or past max_message_size, the
+// channel closes at once and receives fail with the cause; what was queued is discarded.
+void the_budget_or_the_size(bool oversized) {
     using state =
         webrtc::detail::browser::channel_state<asio::any_io_executor, std::allocator<std::byte>>;
-    for (const bool oversized : {false, true}) {
-        asio::io_context io;
-        webrtc::runtime rt;
-        webrtc::options opts;
-        opts.max_message_size = 16;
-        opts.max_received_bytes = (2 * (10 + state::message_record_bytes)) - 1;
-        auto made = connection::make(rt, io.get_executor(), {}, opts);
-        if (!BOOST_TEST(made.has_value())) {
-            return;
-        }
-        auto created = made->create_data_channel("data");
-        if (!BOOST_TEST(created.has_value())) {
-            return;
-        }
-        channel& dc = *created;
-        val fake = last_connection()["channels"][0];
-        fake.set("readyState", val("open"));
-        fire(fake, "onopen");
-        fire(fake, "onmessage", message(bytes(10, 1)));
-        BOOST_TEST(!fake["closed"].as<bool>());
-        fire(fake, "onmessage", message(bytes(oversized ? 17 : 10, 2)));
-        BOOST_TEST(fake["closed"].as<bool>());
-        const auto cause =
-            oversized ? webrtc::error::message_too_large : webrtc::error::receive_overflow;
-        std::string data;
-        auto buffer = asio::dynamic_buffer(data);
-        std::optional<error_code> received;
-        dc.async_receive(buffer, [&](error_code ec, std::size_t, bool) { received = ec; });
-        bool closed = false;
-        dc.async_wait_close([&](error_code ec) { closed = !ec; });
-        settle(io);
-        BOOST_TEST(received && *received == cause);
-        BOOST_TEST(data.empty());
-        BOOST_TEST(closed);
-        BOOST_TEST(dc.ready_state() == webrtc::data_channel_state::closed);
-    }
-}
-
-// The owner's close aborts what waits but async_wait_close, which completes once the browser
-// closed the channel; the peer's close delivers what came before, then error::closed; the
-// connection's close ends the channel's waits with error::closed and its own with
-// operation_aborted, and delivers no state change.
-void the_close_paths() {
     asio::io_context io;
     webrtc::runtime rt;
-    auto made = connection::make(rt, io.get_executor(), {});
+    webrtc::options opts;
+    opts.max_message_size = 16;
+    opts.max_received_bytes = (2 * (10 + state::message_record_bytes)) - 1;
+    auto made = connection::make(rt, io.get_executor(), no_servers, opts);
     if (!BOOST_TEST(made.has_value())) {
         return;
     }
-    connection& pc = *made;
-    auto first = pc.create_data_channel("owner");
-    auto second = pc.create_data_channel("peer");
-    auto third = pc.create_data_channel("connection");
-    if (!BOOST_TEST(first && second && third)) {
+    auto created = made->create_data_channel("data");
+    if (!BOOST_TEST(created.has_value())) {
         return;
     }
-    const val fakes = last_connection()["channels"];
+    channel& dc = *created;
+    val fake = last_connection()["channels"][0];
+    fake.set("readyState", val("open"));
+    fire(fake, "onopen");
+    fire(fake, "onmessage", message(bytes(10, 1)));
+    BOOST_TEST(!fake["closed"].as<bool>());
+    fire(fake, "onmessage", message(bytes(oversized ? 17 : 10, 2)));
+    BOOST_TEST(fake["closed"].as<bool>());
+    const auto cause =
+        oversized ? webrtc::error::message_too_large : webrtc::error::receive_overflow;
+    std::string data;
+    auto buffer = asio::dynamic_buffer(data);
+    std::optional<error_code> received;
+    dc.async_receive(buffer, [&](error_code ec, std::size_t, bool) { received = ec; });
+    bool closed = false;
+    dc.async_wait_close([&](error_code ec) { closed = !ec; });
+    settle(io);
+    BOOST_TEST(received && *received == cause);
+    BOOST_TEST(data.empty());
+    BOOST_TEST(closed);
+    BOOST_TEST(dc.ready_state() == webrtc::data_channel_state::closed);
+}
+
+// The owner's close aborts what waits but async_wait_close, which completes once the browser
+// closed the channel.
+void the_owners_close() {
+    asio::io_context io;
+    webrtc::runtime rt;
+    auto made = connection::make(rt, io.get_executor(), no_servers);
+    if (!BOOST_TEST(made.has_value())) {
+        return;
+    }
+    auto created = made->create_data_channel("owner");
+    if (!BOOST_TEST(created.has_value())) {
+        return;
+    }
+    channel& dc = *created;
     std::optional<error_code> open;
     std::optional<error_code> closed;
-    first->async_wait_open([&](error_code ec) { open = ec; });
-    first->async_wait_close([&](error_code ec) { closed = ec; });
-    first->close();
+    dc.async_wait_open([&](error_code ec) { open = ec; });
+    dc.async_wait_close([&](error_code ec) { closed = ec; });
+    dc.close();
     settle(io);
     BOOST_TEST(open && *open == asio::error::operation_aborted);
     BOOST_TEST(closed && !*closed);
-    BOOST_TEST(first->ready_state() == webrtc::data_channel_state::closed);
+    BOOST_TEST(dc.ready_state() == webrtc::data_channel_state::closed);
+}
 
-    val peer = fakes[1];
+// The peer's close delivers what came before, then error::closed.
+void the_peers_close() {
+    asio::io_context io;
+    webrtc::runtime rt;
+    auto made = connection::make(rt, io.get_executor(), no_servers);
+    if (!BOOST_TEST(made.has_value())) {
+        return;
+    }
+    auto created = made->create_data_channel("peer");
+    if (!BOOST_TEST(created.has_value())) {
+        return;
+    }
+    channel& dc = *created;
+    val peer = last_connection()["channels"][0];
     peer.set("readyState", val("open"));
     fire(peer, "onopen");
     fire(peer, "onmessage", message(val("last")));
@@ -457,8 +481,7 @@ void the_close_paths() {
     auto buffer = asio::dynamic_buffer(data);
     std::vector<error_code> receives;
     for (int i = 0; i < 2; ++i) {
-        second->async_receive(buffer,
-                              [&](error_code ec, std::size_t, bool) { receives.push_back(ec); });
+        dc.async_receive(buffer, [&](error_code ec, std::size_t, bool) { receives.push_back(ec); });
         settle(io);
     }
     if (BOOST_TEST_EQ(receives.size(), 2u)) {
@@ -466,19 +489,38 @@ void the_close_paths() {
         BOOST_TEST(receives[1] == webrtc::error::closed);
     }
     BOOST_TEST_EQ(data, "last");
+}
 
+// The connection's close ends the channel's waits with error::closed and its own with
+// operation_aborted, delivers no state change, sets its handlers to null, and refuses what comes
+// after.
+void the_connections_close() {
+    asio::io_context io;
+    webrtc::runtime rt;
+    auto made = connection::make(rt, io.get_executor(), no_servers);
+    if (!BOOST_TEST(made.has_value())) {
+        return;
+    }
+    connection& pc = *made;
+    auto created = pc.create_data_channel("connection");
+    if (!BOOST_TEST(created.has_value())) {
+        return;
+    }
+    channel& dc = *created;
     std::optional<error_code> state;
     pc.async_wait_state_change([&](error_code ec, webrtc::peer_connection_state) { state = ec; });
+    std::string data;
+    auto buffer = asio::dynamic_buffer(data);
     std::optional<error_code> received;
-    third->async_receive(buffer, [&](error_code ec, std::size_t, bool) { received = ec; });
-    std::optional<error_code> third_closed;
-    third->async_wait_close([&](error_code ec) { third_closed = ec; });
+    dc.async_receive(buffer, [&](error_code ec, std::size_t, bool) { received = ec; });
+    std::optional<error_code> closed;
+    dc.async_wait_close([&](error_code ec) { closed = ec; });
     pc.close();
     settle(io);
     BOOST_TEST(state && *state == asio::error::operation_aborted);
     BOOST_TEST(pc.state() == webrtc::peer_connection_state::closed);
     BOOST_TEST(received && *received == webrtc::error::closed);
-    BOOST_TEST(third_closed && !*third_closed);
+    BOOST_TEST(closed && !*closed);
     BOOST_TEST(pc.create_data_channel("late").error() == webrtc::error::invalid_state);
     std::optional<error_code> later;
     pc.async_wait_ice_candidate(
@@ -496,7 +538,7 @@ void a_channel_accepted_late() {
     webrtc::runtime rt;
     webrtc::options opts;
     opts.max_queued_channels = 1;
-    auto made = connection::make(rt, io.get_executor(), {}, opts);
+    auto made = connection::make(rt, io.get_executor(), no_servers, opts);
     if (!BOOST_TEST(made.has_value())) {
         return;
     }
@@ -554,11 +596,15 @@ void a_channel_accepted_late() {
 int main() {
     test_install_fakes();
     connection_events();
-    descriptions_and_candidates();
+    descriptions_follow_promises();
+    candidates_follow_promises();
     sends_and_their_refusals();
     messages_and_the_buffer();
-    the_budget_and_the_size();
-    the_close_paths();
+    the_budget_or_the_size(false);
+    the_budget_or_the_size(true);
+    the_owners_close();
+    the_peers_close();
+    the_connections_close();
     a_channel_accepted_late();
     // io_context::run_for suspends main, whose returned status Asyncify loses.
     return webcpp::test::exit_status(boost::report_errors());

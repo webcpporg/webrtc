@@ -29,7 +29,7 @@
 
 namespace webrtc = webcpp::webrtc;
 namespace asio = webcpp::asio;
-using error_code = boost::system::error_code;
+using boost::system::error_code;
 
 // clang-format off
 // An RTCPeerConnection that is made, with nothing to negotiate; or, after test_refuse(), one whose
@@ -92,7 +92,7 @@ void the_cap_and_the_census() {
     BOOST_TEST_EQ(before, 0u);
     {
         auto first = connection::make(rt, io.get_executor(), {});
-        auto second = connection::make(rt, io.get_executor(), {});
+        const auto second = connection::make(rt, io.get_executor(), {});
         BOOST_TEST(first.has_value());
         BOOST_TEST(second.has_value());
         BOOST_TEST_EQ(rt.peer_connections(), 2u);
