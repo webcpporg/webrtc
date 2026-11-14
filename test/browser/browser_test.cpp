@@ -256,7 +256,8 @@ void received_before_the_first_receive() {
         });
     });
     p.run();
-    BOOST_TEST((got == std::vector<std::string>{"one", "two", "three"}));
+    const std::vector<std::string> sent{"one", "two", "three"};
+    BOOST_TEST_ALL_EQ(got.begin(), got.end(), sent.begin(), sent.end());
 }
 
 // A negotiated channel: both peers make it with one id, and neither accepts it.
@@ -452,6 +453,22 @@ void bounds() {
     BOOST_TEST(large_text == std::string(16, 'y'));
 }
 
+// Calls `then` once a wait on `pc`'s state completes with connected, waiting again on any other
+// state the connection reports first.
+void when_connected(webrtc::peer_connection& pc, std::function<void()> then) {
+    pc.async_wait_state_change(
+        [&pc, then = std::move(then)](error_code ec, webrtc::peer_connection_state s) mutable {
+            if (!BOOST_TEST(!ec)) {
+                return;
+            }
+            if (s != webrtc::peer_connection_state::connected) {
+                when_connected(pc, std::move(then));
+                return;
+            }
+            then();
+        });
+}
+
 // close() fires no state change: the pending wait ends with operation_aborted, the state reads
 // closed, the channels close with error::closed, the peer's channel sees its close, and a wait
 // started afterwards completes with error::closed.
@@ -471,11 +488,9 @@ void close_fires_no_state_change() {
     webcpp::test::open_channel(p, "c", [&](webrtc::data_channel a, webrtc::data_channel b) {
         ca.emplace(std::move(a));
         cb.emplace(std::move(b));
-        // The first wait completes with the current state, connected; the second is pending
-        // when the connection closes.
-        p.a->async_wait_state_change([&](error_code ec, webrtc::peer_connection_state s) {
-            BOOST_TEST(!ec);
-            BOOST_TEST(s == webrtc::peer_connection_state::connected);
+        // The waits consume the states up to connected; the next one is pending when the
+        // connection closes, since nothing is delivered between its start and close().
+        when_connected(*p.a, [&] {
             p.a->async_wait_state_change(
                 [&](error_code ec, webrtc::peer_connection_state) { state_wait = ec; });
             ca->async_receive(ba, [&](error_code ec, std::size_t, bool) { local_receive = ec; });

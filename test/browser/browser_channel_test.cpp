@@ -84,6 +84,11 @@ void read_messages(webrtc::data_channel& channel, reader& r, std::size_t limit,
     });
 }
 
+/** Checks that `got` read exactly `expected`, naming each message that differs. */
+void read_exactly(const reader& got, const std::vector<std::string>& expected) {
+    BOOST_TEST_ALL_EQ(got.messages.begin(), got.messages.end(), expected.begin(), expected.end());
+}
+
 /** What calls `last` on its `count`th call, and nothing before. */
 std::function<void()> after(int count, std::function<void()> last) {
     const auto left = std::make_shared<int>(count);
@@ -171,7 +176,7 @@ void a_received_message_past_the_size() {
         read_messages(*cb, got, until_it_fails, both);
     });
     p.run();
-    BOOST_TEST((got.messages == std::vector<std::string>{"first"}));
+    read_exactly(got, {"first"});
     BOOST_TEST(got.end && *got.end == webrtc::error::message_too_large);
     BOOST_TEST(cb->ready_state() == webrtc::data_channel_state::closed);
     BOOST_TEST(peer_saw && !*peer_saw);
@@ -293,18 +298,21 @@ void the_buffered_amount_wait() {
     BOOST_TEST_EQ(got.messages.size(), count);
 }
 
-// The peer closes its channel: what it sent before is delivered, then the reading ends with
-// error::closed and the close wait completes without an error; a send on a closed channel is
-// refused with invalid_state.
+// The peer closes its channel: what reached the page before, unread, is still delivered after the
+// close, then the reading ends with error::closed; both close waits complete without an error, and
+// a send on a closed channel is refused with invalid_state. The peer closes once the messages
+// reached the page: a browser discards a message that reaches a channel no longer open (the W3C's
+// "receiving messages"), and Chrome 156 does so with messages sent just before a close made at
+// once, measured with plain RTCDataChannel objects; 50 ms later they arrive first.
 void the_peer_closes_its_channel() {
     page_pair p;
     std::optional<webrtc::data_channel> ca;
     std::optional<webrtc::data_channel> cb;
-    asio::steady_timer later(p.io);  // lint-world: lets the messages and the close arrive unread
+    asio::steady_timer later(p.io);  // lint-world: lets the messages reach the peer's page
     reader got;
     std::optional<error_code> closed_here;
     std::optional<error_code> closed_there;
-    const auto all = after(3, [&] {
+    const auto all = after(2, [&] {
         BOOST_TEST(ca->send_text("late") == webrtc::error::invalid_state);
         BOOST_TEST(cb->send_text("late") == webrtc::error::invalid_state);
         p.a->close();
@@ -315,22 +323,22 @@ void the_peer_closes_its_channel() {
         cb.emplace(std::move(b));
         BOOST_TEST(!ca->send_text("one"));
         BOOST_TEST(!ca->send_text("two"));
-        ca->async_wait_close([&](error_code ec) {
-            closed_here = ec;
-            all();
-        });
-        ca->close();
         later.expires_after(unread);
         later.async_wait([&](error_code) {
-            read_messages(*cb, got, until_it_fails, all);
-            cb->async_wait_close([&](error_code ec) {
-                closed_there = ec;
+            ca->async_wait_close([&](error_code ec) {
+                closed_here = ec;
                 all();
             });
+            ca->close();
+        });
+        // b reads nothing until the close reached it.
+        cb->async_wait_close([&](error_code ec) {
+            closed_there = ec;
+            read_messages(*cb, got, until_it_fails, all);
         });
     });
     p.run();
-    BOOST_TEST((got.messages == std::vector<std::string>{"one", "two"}));
+    read_exactly(got, {"one", "two"});
     BOOST_TEST(got.end && *got.end == webrtc::error::closed);
     BOOST_TEST(closed_here && !*closed_here);
     BOOST_TEST(closed_there && !*closed_there);
@@ -447,7 +455,7 @@ void accepted_after_its_messages() {
     p.negotiate([](error_code ec) { BOOST_TEST(!ec); });
     p.run();
     BOOST_TEST(!got.end);
-    BOOST_TEST((got.messages == std::vector<std::string>{"one", "two", "three"}));
+    read_exactly(got, {"one", "two", "three"});
     BOOST_TEST((got.texts == std::vector<bool>{true, true, false}));
 }
 
