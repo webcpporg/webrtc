@@ -221,9 +221,7 @@ private:
 
 #else
 
-namespace webcpp::webrtc {
-
-namespace detail {
+namespace webcpp::webrtc::detail {
 
 /** The library's access to a runtime's count. */
 struct runtime_access {
@@ -279,9 +277,7 @@ private:
     runtime* runtime_ = nullptr;
 };
 
-}  // namespace detail
-
-}  // namespace webcpp::webrtc
+}  // namespace webcpp::webrtc::detail
 
 #endif  // WEBCPP_TARGET_EMSCRIPTEN
 

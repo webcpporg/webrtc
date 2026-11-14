@@ -546,47 +546,57 @@ private:
     // A promise settled: the operation that follows it completes, unless it ended already.
     void settle(const emscripten::val& event) {
         const auto id = static_cast<std::uint64_t>(event["id"].as<double>());
-        const bool ok = event["ok"].as<bool>();
         if (event["local"].as<bool>()) {
-            const auto found = find(locals_, id);
-            if (found == locals_.end()) {
-                return;
-            }
-            if (found->op != nullptr) {
-                const int type = ok ? event["type"].as<int>() : -1;
-                if (type < 0) {
-                    found->op->fail(ok ? make_error_code(error::operation_error)
-                                       : error_of(event["name"]));
-                } else {
-                    session_description description{
-                        static_cast<sdp_type>(type),
-                        string_type(text_allocator()),
-                    };
-                    js_copy(event["sdp"], description.sdp);
-                    found->op->complete({}, std::move(description));
-                }
-            }
-            locals_.erase(found);
+            settle_local(id, event);
+        } else {
+            settle_other(id, event);
+        }
+    }
+
+    // A local description's promise settled.
+    void settle_local(std::uint64_t id, const emscripten::val& event) {
+        const auto found = find(locals_, id);
+        if (found == locals_.end()) {
             return;
         }
+        if (found->op != nullptr) {
+            const bool ok = event["ok"].as<bool>();
+            const int type = ok ? event["type"].as<int>() : -1;
+            if (type < 0) {
+                found->op->fail(ok ? make_error_code(error::operation_error)
+                                   : error_of(event["name"]));
+            } else {
+                session_description description{
+                    static_cast<sdp_type>(type),
+                    string_type(text_allocator()),
+                };
+                js_copy(event["sdp"], description.sdp);
+                found->op->complete({}, std::move(description));
+            }
+        }
+        locals_.erase(found);
+    }
+
+    // A remote description's or a candidate's promise settled: its operation completes, then the
+    // ends of the remote candidates that waited for it, a remote description's.
+    void settle_other(std::uint64_t id, const emscripten::val& event) {
         if (remote_in_flight_ == id) {
             remote_in_flight_ = 0;
         }
-        // The operation of the promise, then the ends of the remote candidates that waited for
-        // it, a remote description's.
+        const bool ok = event["ok"].as<bool>();
         for (auto it = others_.begin(); it != others_.end();) {
             if (it->id != id) {
                 ++it;
                 continue;
             }
-            if (it->op != nullptr) {
-                if (it->end) {
-                    finish_end(*it->op);
-                } else if (ok) {
-                    it->op->complete({});
-                } else {
-                    it->op->fail(error_of(event["name"]));
-                }
+            if (it->op == nullptr) {
+                // Cancelled already.
+            } else if (it->end) {
+                finish_end(*it->op);
+            } else if (ok) {
+                it->op->complete({});
+            } else {
+                it->op->fail(error_of(event["name"]));
             }
             it = others_.erase(it);
         }
