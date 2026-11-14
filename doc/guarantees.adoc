@@ -62,8 +62,9 @@ exceptions.* Built with `exception-handling=off`, against libdatachannel's
 archives built with exceptions, it behaves as with them. _Held by_
 `native_no_exceptions`, `events_no_exceptions`, and every header compiled
 alone without exceptions. The browser implementation works without them
-too: every emscripten test and every program of the `browser` lane runs
-again with `exception-handling=off`.
+too: every emscripten test that runs a program, under Node in both
+suspension variants (its `_asyncify` twins), and every program of the
+`browser` lane runs again with `exception-handling=off`.
 . [[webrtc-invariant-10]]*The object's memory is its allocator's, on its
 executor.* Its state, queues and outputs are allocated through it, an
 operation's state through its handler's allocator, and nothing of the
@@ -92,7 +93,7 @@ budget.* A channel's unread messages and their records stay within
 `options::max_received_bytes`, charged as the browser delivers them; past
 it, or past `max_message_size`, the channel closes and `async_receive`
 completes with `receive_overflow` or `message_too_large`. _Held by_
-`browser_backend` (`messages_and_the_buffer`) and the `browser` lane
+`browser_backend` (`the_budget_or_the_size`) and the `browser` lane
 (`unread_messages_past_the_budget`, `a_received_message_past_the_size`).
 . [[webrtc-invariant-16]]*Translation units that disagree on the unsupported
 policy do not link together.* The browser's classes live in an inline

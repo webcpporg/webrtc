@@ -92,7 +92,9 @@ public:
      @param allocator The allocator of its state and outputs.
      @return The connection; or `error::too_many_peer_connections` past the runtime's cap,
      `error::syntax_error` for an ICE server URL that cannot be parsed, `error::type_error` for a
-     bound out of the platform's range, `error::operation_error` for another refusal.
+     bound out of the platform's range, `error::operation_error` for another refusal; in the
+     browser, `operation_not_supported` for a `configuration::bind_address`, which it cannot
+     honour, under the default policy.
     */
     static boost::system::result<basic_peer_connection> make(
         runtime& rt, const Executor& executor, const configuration& config,
@@ -206,6 +208,10 @@ public:
 
     /**
      Adds a remote candidate; an empty `candidate` ends the remote gathering and adds none.
+
+     In the browser the operation follows the browser's promise, in the browser's order of
+     operations, and its cancellation is terminal only: the candidate may still be added after the
+     handler ran with `operation_aborted`.
 
      @tparam CompletionToken The completion token.
      @param candidate The candidate, read during the call.

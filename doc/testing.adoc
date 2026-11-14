@@ -48,7 +48,7 @@ include::{library-root}/test/Jamfile[tag=native]
   when webcpp has no exceptions, and keeps it when a developer defines it in
   a build that has them.
 
-| `error`, `types`
+| `error`, `types`, and their `_no_exceptions` twins
 | The category's name and fixed values, a message for each, the options'
   defaults, and the value types: their defaults, a description's and a
   candidate's view, and their text in a polymorphic allocator.
@@ -86,14 +86,18 @@ include::{library-root}/test/Jamfile[tag=native]
 | `browser_imports`, `browser_runtime`, `browser_backend`
 | On emscripten, under Node, which has no `RTCPeerConnection`: the browser
   calls catch what JavaScript throws and report it by name, never
-  re-entering {cpp}; the census and the cap, a slot freed once a connection
-  is collected; and the browser implementation's semantics over a fake
-  connection and channel of the test's own, each with exceptions off too.
+  re-entering {cpp}, and texts cross whole; the census and the cap, a slot
+  freed once a connection is collected; and the browser implementation's
+  semantics over a fake connection and channel of the test's own, the order
+  of arrivals of different kinds, cancellation, a close with a notification
+  in flight, and the `io_context` destroyed while handlers own the objects.
+  Each runs with exceptions off too, and in the asyncify variant whatever the
+  build asks for, its `_asyncify` twins.
 
 | `browser_policy`, `config_boundary`, `config_mismatch`
 | `bind_address` under each policy, and two translation units with
   different policies that fail to link when they pass a channel between
-  them.
+  them, with their twins likewise.
 
 | the `browser` lane
 | Two peers in one page of headless Chrome (`test/browser/`): every native

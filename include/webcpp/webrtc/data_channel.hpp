@@ -171,7 +171,10 @@ public:
 
      A message larger than the room left in `buffer` stays queued, and the operation completes
      with `no_buffer_space`. Once the peer closed the channel, the messages it sent before are
-     still delivered, then the operation completes with `error::closed`.
+     still delivered, then the operation completes with `error::closed`. In the browser, once the
+     unread messages passed `options::max_received_bytes`, or a message `options::max_message_size`,
+     the channel closed, what it held is discarded, and the operation completes with
+     `error::receive_overflow` or `error::message_too_large`.
 
      @tparam DynamicBuffer A dynamic buffer of Asio's first version.
      @tparam CompletionToken The completion token.
@@ -270,7 +273,8 @@ public:
      Sends a text message: queues it, or fails as `send` does.
 
      @param text The message, UTF-8, read during the call. Natively a text holding a zero fails
-     with `operation_not_supported` (the table of differences).
+     with `operation_not_supported`; in the browser a text that is not valid UTF-8 fails with
+     `error::type_error` (the table of differences).
      @return The failure, or nothing once queued.
     */
     boost::system::error_code send_text(std::string_view text) {

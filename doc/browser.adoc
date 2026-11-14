@@ -69,12 +69,14 @@ may hold a zero byte, which the native implementation refuses.
 A local candidate carries all four of the W3C's members, the media line's
 index and the user name fragment among them. The browser ends each gathering
 generation with an empty candidate of its own; webrtc delivers the end of
-gathering once, when the browser has nothing more to gather. An empty
-remote candidate completes `async_add_ice_candidate` at once without reaching
-the browser, as natively, and a non-empty one follows the browser's promise:
-the browser checks it in its own order of operations, so a candidate added
-while the remote description is still being applied is applied after it, and
-one added with no remote description fails with `invalid_state`.
+gathering once, when the browser has nothing more to gather. A remote
+candidate follows the browser's own order of operations: a non-empty one
+follows the browser's promise, so that one added while the remote
+description is still being applied is applied after it, and one added with
+no remote description fails with `invalid_state`. An empty one, the end of
+the remote candidates, never reaches the browser, as natively: it completes
+at once when a remote description is applied, after the one being applied
+settles, and with `invalid_state` when there is none.
 
 [#webrtc-browser-policy]
 === What the browser cannot honour
