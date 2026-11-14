@@ -6,8 +6,10 @@
 #
 # webrtc, the W3C WebRTC data-channel API in Asio's model. A program uses
 # /webcpp/webrtc//webrtc: natively it brings the pinned libdatachannel and its
-# OpenSSL, which need threading=multi; in the browser (increment 2) it brings
-# nothing but webcpp::asio's browser runtime.
+# OpenSSL, which need threading=multi; on emscripten it brings nothing but
+# webcpp::asio, whose usage requirements link its browser runtime (the
+# bridge's export and JavaScript, <webcpp/asio/browser/src.hpp>), embind and
+# the suspension variant's flag, so that a program includes nothing more.
 
 project /webcpp/webrtc ;
 
@@ -26,6 +28,8 @@ alias headers : : : : <include>include <library>/webcpp/config//config
 
 # Natively, libdatachannel through its C API, which works with exceptions on
 # and off (design.md, D4): no <exception-handling> is required of a consumer.
+# In the browser, the browser's own objects, through webcpp::asio's bridge,
+# whose JavaScript catches the browser's exceptions (design.md, D8).
 # tag::webrtc[]
 alias webrtc : : <toolset>emscripten : : <library>headers <library>/webcpp/asio//asio ;
 alias webrtc : : : : <library>headers <library>/webcpp/asio//asio

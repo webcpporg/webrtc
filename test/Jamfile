@@ -96,3 +96,29 @@ webcpp.run browser_runtime : browser_runtime_test.cpp : <library>/webcpp/webrtc/
   : emscripten ;
 webcpp.run browser_runtime_no_exceptions : browser_runtime_test.cpp
   : <library>/webcpp/webrtc//webrtc <exception-handling>off : emscripten ;
+
+# What the browser cannot honour (design.md, D14): bind_address fails make
+# under the default policy and is ignored under
+# webcpp-webrtc-unsupported=ignore.
+webcpp.run browser_policy : browser_policy_test.cpp : <library>/webcpp/webrtc//webrtc
+  : emscripten ;
+webcpp.run browser_policy_no_exceptions : browser_policy_test.cpp
+  : <library>/webcpp/webrtc//webrtc <exception-handling>off : emscripten ;
+webcpp.run browser_policy_ignore : browser_policy_test.cpp
+  : <library>/webcpp/webrtc//webrtc <webcpp-webrtc-unsupported>ignore : emscripten ;
+
+# Translation units that disagree on the policy name different types in the
+# browser, so that a channel passed between them fails to link; the
+# control, which agrees, links and runs (webcpp::beast's D9 test).
+webcpp.run config_boundary : config_provider.cpp config_consumer.cpp
+  : <library>/webcpp/webrtc//webrtc : emscripten ;
+webcpp.link-fail config_mismatch : config_provider.cpp config_consumer.cpp
+  : <library>/webcpp/webrtc//webrtc <define>WEBCPP_WEBRTC_TEST_MISMATCH : emscripten ;
+
+# The browser's peer connection and data channel under node, with the
+# test's own RTCPeerConnection, whose events the test fires: the semantics
+# a fake can pin; a real browser's behaviour is test/browser's.
+webcpp.run browser_backend : browser_backend_test.cpp : <library>/webcpp/webrtc//webrtc
+  : emscripten ;
+webcpp.run browser_backend_no_exceptions : browser_backend_test.cpp
+  : <library>/webcpp/webrtc//webrtc <exception-handling>off : emscripten ;
