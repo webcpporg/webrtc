@@ -19,12 +19,14 @@
 #include <webcpp/webrtc/runtime.hpp>
 #include <webcpp/webrtc/types.hpp>
 
-#include <webcpp/asio/error.hpp>  // lint-world: Asio's codes
-#include <webcpp/asio/post.hpp>   // lint-world: libdatachannel's events are posted
+#include <webcpp/asio/cancellation_type.hpp>  // lint-world: what a cancellation can do
+#include <webcpp/asio/error.hpp>              // lint-world: Asio's codes
+#include <webcpp/asio/post.hpp>               // lint-world: libdatachannel's events are posted
 
 #include <boost/system/result.hpp>
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -55,6 +57,9 @@ public:
     using ice_candidate = basic_ice_candidate<Allocator>;
     /** The connection's text type. */
     using string_type = detail::string<Allocator>;
+
+    /** What a cancellation of `async_add_ice_candidate` can do: it completes at once, posted. */
+    static constexpr webcpp::asio::cancellation_type candidate_cancellation = wait_cancellation;
 
     /** Makes the state of a connection not yet made in libdatachannel. */
     connection_state(runtime_slot slot, const Executor& executor, const options& opts,
@@ -183,8 +188,13 @@ public:
         op.complete({});
     }
 
-    /** Adds the remote candidate `candidate`; an empty one adds none. */
+    /**
+     Adds the remote candidate `candidate`; an empty one adds none. Its m-line index and its user
+     name fragment are ignored: libdatachannel finds the m-line by its mid, and has one ICE
+     session per connection (design.md, D14).
+    */
     void add_ice_candidate(const string_type& candidate, const std::optional<string_type>& mid,
+                           std::optional<std::uint16_t> /*index*/, const string_type& /*ufrag*/,
                            pending<>& op) {
         if (closed_ || !has_remote_description()) {
             op.fail(make_error_code(error::invalid_state));

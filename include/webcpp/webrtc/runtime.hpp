@@ -12,14 +12,137 @@
 #include <webcpp/webrtc/options.hpp>
 
 #ifdef WEBCPP_TARGET_EMSCRIPTEN
-#error "webcpp::webrtc: the browser implementation is increment 2 of reference/plan.md"
-#endif
-
+#include <webcpp/webrtc/detail/browser/census.hpp>
+#else
 #include <webcpp/webrtc/detail/native/capi.hpp>
+#endif
 
 #include <atomic>
 #include <cstddef>
 #include <utility>
+
+#ifdef WEBCPP_TARGET_EMSCRIPTEN
+
+// In the browser the classes live in an inline namespace named after the unsupported policy, so
+// that translation units that disagree on it name different types and fail to link
+// (design.md, D14).
+// NOLINTNEXTLINE(modernize-concat-nested-namespaces): the policy selects an inline namespace
+namespace webcpp::webrtc {
+#ifdef WEBCPP_WEBRTC_UNSUPPORTED_IGNORE
+inline namespace unsupported_ignore {
+#else
+inline namespace unsupported_error {
+#endif
+
+/**
+ What the page holds for the whole program, which the program owns: the cap of peer connections.
+
+ A program makes one before any peer connection and destroys it after the last, and after the
+ last data channel; `make` takes it by reference, so no connection exists without one. The page's
+ count of connections lives in JavaScript, on the page, so that every runtime and every module of
+ the page counts in one place, as Chromium counts its own limit: a connection counts from its
+ construction until the garbage collector frees it, a closed one included.
+
+ @see "The runtime", in the guide.
+*/
+class runtime {
+public:
+    /**
+     Makes the runtime; the browser's threads are its own, so `thread_pool_size` changes nothing.
+
+     @param opts The cap of peer connections.
+    */
+    explicit runtime(const runtime_options& opts = {}) noexcept : options_(opts) {}
+
+    /** Destroys the runtime, which holds nothing of the page. */
+    ~runtime() = default;
+
+    /** Not copyable: its connections hold it by reference. */
+    runtime(const runtime&) = delete;
+    /** Not copy-assignable: its connections hold it by reference. */
+    runtime& operator=(const runtime&) = delete;
+    /** Not movable: its connections hold it by reference. */
+    runtime(runtime&&) = delete;
+    /** Not move-assignable: its connections hold it by reference. */
+    runtime& operator=(runtime&&) = delete;
+
+    /**
+     The options it was made with.
+
+     @return The options.
+    */
+    [[nodiscard]] const runtime_options& get_options() const noexcept { return options_; }
+
+    /**
+     The peer connections of the page that count against the cap: made by webcpp::webrtc, with any
+     runtime, and not yet freed by the garbage collector.
+
+     @return Their number.
+    */
+    [[nodiscard]] std::size_t peer_connections() const noexcept {
+        return detail::browser::census_held();
+    }
+
+private:
+    runtime_options options_;
+};
+
+}  // namespace unsupported_error or unsupported_ignore
+}  // namespace webcpp::webrtc
+
+// NOLINTNEXTLINE(modernize-concat-nested-namespaces): the policy selects an inline namespace
+namespace webcpp::webrtc::detail {
+#ifdef WEBCPP_WEBRTC_UNSUPPORTED_IGNORE
+inline namespace unsupported_ignore {
+#else
+inline namespace unsupported_error {
+#endif
+
+/**
+ One connection's place under a runtime's cap: held when the page's census counts fewer
+ connections than the cap. The census itself counts the connection once it is made, and until it
+ is collected, so the place gives nothing back.
+*/
+class runtime_slot {
+public:
+    /** No place. */
+    runtime_slot() = default;
+
+    /** Takes a place under the cap of `rt`, or none at it. */
+    explicit runtime_slot(const runtime& rt) noexcept
+        : held_(rt.peer_connections() < rt.get_options().max_peer_connections) {}
+
+    /** Not copyable: it is one place. */
+    runtime_slot(const runtime_slot&) = delete;
+    /** Not copy-assignable: it is one place. */
+    runtime_slot& operator=(const runtime_slot&) = delete;
+
+    /** Moves the place. */
+    runtime_slot(runtime_slot&& other) noexcept : held_(std::exchange(other.held_, false)) {}
+
+    /** Moves the place. */
+    runtime_slot& operator=(runtime_slot&& other) noexcept {
+        held_ = std::exchange(other.held_, false);
+        return *this;
+    }
+
+    /** Drops the place. */
+    ~runtime_slot() = default;
+
+    /** Whether it holds a place. */
+    explicit operator bool() const noexcept { return held_; }
+
+    /** Drops the place; the census gives it back once the connection is collected. */
+    void reset() noexcept { held_ = false; }
+
+private:
+    bool held_ = false;
+};
+
+}  // namespace unsupported_error or unsupported_ignore
+}  // namespace webcpp::webrtc::detail
+
+#else
 
 namespace webcpp::webrtc {
 
@@ -158,5 +281,7 @@ private:
 }  // namespace detail
 
 }  // namespace webcpp::webrtc
+
+#endif  // WEBCPP_TARGET_EMSCRIPTEN
 
 #endif  // WEBCPP_WEBRTC_RUNTIME_HPP

@@ -6,6 +6,7 @@
 
 project : requirements <library>/webcpp/webrtc//headers ;
 
+import feature ;
 import webcpp ;
 
 # Natively and on emscripten, both suspension variants (webcpp-suspend=jspi
@@ -13,10 +14,25 @@ import webcpp ;
 # alone, and what needs a browser's objects names emscripten alone.
 webcpp.targets native emscripten ;
 
-# Every public header alone, against libdatachannel. It works without
-# exceptions: libdatachannel is called through its C API (design.md, D4).
+# Every header alone: the interface and the platform-free headers on both
+# targets, natively against libdatachannel, whose threads need
+# threading=multi there; each backend's headers on its own target. It works
+# without exceptions: natively libdatachannel is called through its C API
+# (design.md, D4), and in the browser JavaScript catches its own (D8).
+rule native-threads ( properties * )
+{
+    if [ feature.get-values <toolset> : $(properties) ] != emscripten
+    {
+        return <threading>multi ;
+    }
+}
 webcpp.headers-alone webrtc : ../include
-  : : <library>/webcpp/webrtc//webrtc <threading>multi : native ;
+  : webrtc.hpp webrtc/*.hpp webrtc/detail/*.hpp
+  : <conditional>@native-threads : native emscripten ;
+webcpp.headers-alone webrtc : ../include : webrtc/detail/native/*.hpp
+  : <threading>multi : native ;
+webcpp.headers-alone webrtc : ../include : webrtc/detail/browser/*.hpp
+  : : emscripten ;
 
 # config.hpp defines WEBCPP_WEBRTC_NO_EXCEPTIONS exactly when webcpp has no
 # exceptions, and keeps it when a developer defines it in a build that has
@@ -72,4 +88,11 @@ webcpp.run bench : ../bench/receive_bench.cpp
 webcpp.run browser_imports : browser_imports_test.cpp : <library>/webcpp/webrtc//webrtc
   : emscripten ;
 webcpp.run browser_imports_no_exceptions : browser_imports_test.cpp
+  : <library>/webcpp/webrtc//webrtc <exception-handling>off : emscripten ;
+
+# The runtime's cap, and a slot the page's census frees once the garbage
+# collector frees its connection (node's gc, which the test exposes).
+webcpp.run browser_runtime : browser_runtime_test.cpp : <library>/webcpp/webrtc//webrtc
+  : emscripten ;
+webcpp.run browser_runtime_no_exceptions : browser_runtime_test.cpp
   : <library>/webcpp/webrtc//webrtc <exception-handling>off : emscripten ;
