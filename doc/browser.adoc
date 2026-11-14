@@ -16,10 +16,16 @@ webcpp::asio's bridge, the service of the `io_context` through which the
 page's JavaScript events reach {cpp}: the browser's event handlers deliver
 to it, it records what arrived in the object's state and posts at most one
 notification for all of it, and the notification completes the waits on the
-executor. No handler of the program runs inside a JavaScript event, and an
-event reaches the program only while it has returned to the page's event
-loop or while `run()` is suspended, in either of webcpp::asio's suspension
-variants, `jspi` and `asyncify`.
+executor, in the order the browser delivered what they wait for: a
+description's settlement delivered before the first candidate completes
+`async_set_local_description` first, so that a program that sends each
+candidate as it comes sends its offer before them. No handler of the program
+runs inside a JavaScript event, and an event reaches the program only while
+it has returned to the page's event loop or while `run()` is suspended, in
+either of webcpp::asio's suspension variants, `jspi` and `asyncify`. When the
+`io_context` is destroyed with operations pending, its shutdown destroys
+their handlers without calling them, as Asio's own operations are, even when
+a handler holds the last owner of the object it waits on.
 
 Every call into the browser is a JavaScript function that catches what the
 browser throws before it reaches WebAssembly and reports it by its
@@ -61,7 +67,8 @@ channel open, as natively: the channel's live `readyState` first, then the
 smaller of `options::max_message_size` and the peer's `maxMessageSize`, then
 `options::max_buffered_amount`. A text must be valid UTF-8, since the
 browser sends a JavaScript string, or the send fails with `type_error`; it
-may hold a zero byte, which the native implementation refuses.
+may hold a zero byte, which the native implementation refuses, and a leading
+byte order mark is part of it, sent and received as any other character.
 
 [#webrtc-browser-candidates]
 === Candidates
