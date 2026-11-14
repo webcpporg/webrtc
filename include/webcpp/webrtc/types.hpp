@@ -33,8 +33,8 @@ enum class sdp_type {
 
 /** The state of a peer connection, the W3C's `RTCPeerConnectionState`. */
 enum class peer_connection_state {
-    /** "new". */
-    new_,
+    /** "new", spelled `new_` since `new` is a keyword. */
+    new_,  // NOLINT(readability-identifier-naming)
     /** "connecting". */
     connecting,
     /** "connected". */
@@ -49,8 +49,8 @@ enum class peer_connection_state {
 
 /** The state of a peer connection's ICE agent, the W3C's `RTCIceConnectionState`. */
 enum class ice_connection_state {
-    /** "new". */
-    new_,
+    /** "new", spelled `new_` since `new` is a keyword. */
+    new_,  // NOLINT(readability-identifier-naming)
     /** "checking". */
     checking,
     /** "connected". */

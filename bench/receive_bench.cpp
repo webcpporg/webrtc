@@ -50,37 +50,41 @@
 namespace {
 
 // This thread's allocations: the drain runs on the main thread, and libdatachannel's threads
-// allocate beside it, each in its own count.
+// allocate beside it, each in its own count. A replaced operator new has no object to keep it in.
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 thread_local std::size_t allocations = 0;
 
 }  // namespace
 
+// The standard library's declarations name the size as each implementation pleases.
+// NOLINTNEXTLINE(readability-inconsistent-declaration-parameter-name)
 void* operator new(std::size_t size) {
     ++allocations;
-    if (void* p = std::malloc(size == 0 ? 1 : size)) {  // NOLINT: the replaced allocation itself
+    if (void* p = std::malloc(size == 0 ? 1 : size)) {
         return p;
     }
     throw std::bad_alloc();
 }
 
+// NOLINTNEXTLINE(readability-inconsistent-declaration-parameter-name)
 void* operator new[](std::size_t size) {
     return ::operator new(size);
 }
 
 void operator delete(void* p) noexcept {
-    std::free(p);  // NOLINT: the replaced deallocation itself
+    std::free(p);
 }
 
 void operator delete[](void* p) noexcept {
-    std::free(p);  // NOLINT: the replaced deallocation itself
+    std::free(p);
 }
 
 void operator delete(void* p, std::size_t /*size*/) noexcept {
-    std::free(p);  // NOLINT: the replaced deallocation itself
+    std::free(p);
 }
 
 void operator delete[](void* p, std::size_t /*size*/) noexcept {
-    std::free(p);  // NOLINT: the replaced deallocation itself
+    std::free(p);
 }
 
 namespace {
@@ -123,7 +127,7 @@ void await(Predicate ready, const char* what) {
 
 /** The byte at `offset` of message `index`, so that a message read twice or out of order shows. */
 char pattern(std::size_t index, std::size_t offset) {
-    return static_cast<char>((index * 131 + offset) % 251);
+    return static_cast<char>(((index * 131) + offset) % 251);
 }
 
 void fill(std::vector<char>& message, std::size_t index) {
@@ -355,9 +359,10 @@ int main() try {
 #endif
     return 0;
 } catch (const std::exception& e) {
-    std::fprintf(stderr, "%s\n", e.what());
+    static_cast<void>(std::fprintf(stderr, "%s\n", e.what()));
     return 1;
 } catch (...) {
-    std::fprintf(stderr, "receive_bench: an exception that is no std::exception\n");
+    static_cast<void>(
+        std::fprintf(stderr, "receive_bench: an exception that is no std::exception\n"));
     return 1;
 }

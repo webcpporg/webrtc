@@ -125,7 +125,7 @@ int main() {
     auto a = webrtc::peer_connection::make(rt, io.get_executor(), config).value();
     auto b = webrtc::peer_connection::make(rt, io.get_executor(), config).value();
     // A description needs something to negotiate: a channel.
-    auto channel = a.create_data_channel("signalling").value();
+    const auto channel = a.create_data_channel("signalling").value();
 
     // tag::offer[]
     inbox at_a(a);

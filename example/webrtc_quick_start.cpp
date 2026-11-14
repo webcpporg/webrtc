@@ -45,8 +45,41 @@ void gather(webrtc::peer_connection& pc, std::function<void()> done) {
             }
         });
 }
-
 // end::gather[]
+
+// tag::signal[]
+// a offers, b answers; each description goes over once its candidates are gathered.
+void connect(webrtc::peer_connection& a, webrtc::peer_connection& b) {
+    a.async_set_local_description([&](error_code ec, const webrtc::session_description&) {
+        if (ec) {
+            return;
+        }
+        gather(a, [&] {
+            const auto offer = a.local_description().value();
+            b.async_set_remote_description(offer.view(), [&](error_code ec) {
+                if (ec) {
+                    return;
+                }
+                b.async_set_local_description(
+                    [&](error_code ec, const webrtc::session_description&) {
+                        if (ec) {
+                            return;
+                        }
+                        gather(b, [&] {
+                            const auto answer = b.local_description().value();
+                            a.async_set_remote_description(answer.view(), [](error_code ec) {
+                                if (ec) {
+                                    std::printf("a: the answer was refused: %s\n",
+                                                ec.message().c_str());
+                                }
+                            });
+                        });
+                    });
+            });
+        });
+    });
+}
+// end::signal[]
 
 }  // namespace
 
@@ -107,37 +140,7 @@ int main() {
     });
     // end::channel[]
 
-    // tag::signal[]
-    // a offers, b answers; each description goes over once its candidates are gathered.
-    a.async_set_local_description([&](error_code ec, const webrtc::session_description&) {
-        if (ec) {
-            return;
-        }
-        gather(a, [&] {
-            const auto offer = a.local_description().value();
-            b.async_set_remote_description(offer.view(), [&](error_code ec) {
-                if (ec) {
-                    return;
-                }
-                b.async_set_local_description(
-                    [&](error_code ec, const webrtc::session_description&) {
-                        if (ec) {
-                            return;
-                        }
-                        gather(b, [&] {
-                            const auto answer = b.local_description().value();
-                            a.async_set_remote_description(answer.view(), [](error_code ec) {
-                                if (ec) {
-                                    std::printf("a: the answer was refused: %s\n",
-                                                ec.message().c_str());
-                                }
-                            });
-                        });
-                    });
-            });
-        });
-    });
-    // end::signal[]
+    connect(a, b);
 
     // tag::run[]
     // Until both connections are closed, or the example gives up.

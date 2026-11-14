@@ -48,9 +48,12 @@ int main() {
           webrtc::peer_connection::make(rt, io.get_executor(), webrtc::configuration{}).error());
 
     // A candidate needs a remote description first.
-    pc.async_add_ice_candidate(webrtc::ice_candidate_view{.candidate = "candidate:1 1 UDP 1 "
-                                                                       "127.0.0.1 9 typ host"},
-                               [](error_code ec) { print("a candidate too early", ec); });
+    pc.async_add_ice_candidate(
+        webrtc::ice_candidate_view{
+            .candidate = "candidate:1 1 UDP 1 "
+                         "127.0.0.1 9 typ host",
+        },
+        [](error_code ec) { print("a candidate too early", ec); });
 
     // Both reliability limits at once.
     print("a channel with both limits",
