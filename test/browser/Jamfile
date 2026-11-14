@@ -1,0 +1,27 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+#
+# webrtc's browser implementation in headless Chrome (reference/plan.md,
+# Task 2.6): each program is built in both suspension variants, as the
+# build asks and once with exceptions off, and run.mjs drives both variants
+# in one Chrome. Its own lane, browser, runs on emscripten alone.
+
+import webcpp ;
+webcpp.targets emscripten ;
+webcpp.original node ;
+
+webcpp.variants harness_probe : harness_probe.cpp : <library>/webcpp/webrtc//webrtc ;
+webcpp.drive browser_harness : .//harness_probe
+  : <dependency>harness_probe.variants.json <webcpp-drive-timeout>120
+  : run.mjs : --program harness_probe --expected "browser harness: ok" ;
+
+webcpp.variants harness_probe_no_exceptions : harness_probe.cpp
+  : <library>/webcpp/webrtc//webrtc <exception-handling>off ;
+webcpp.drive browser_harness_no_exceptions : .//harness_probe_no_exceptions
+  : <dependency>harness_probe_no_exceptions.variants.json <webcpp-drive-timeout>120
+  : run.mjs : --program harness_probe_no_exceptions --expected "browser harness: ok" ;
+
+webcpp.lane browser : browser_harness browser_harness_no_exceptions : emscripten ;

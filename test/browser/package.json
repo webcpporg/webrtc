@@ -1,0 +1,6 @@
+{
+    "name": "webcpp-webrtc-browser-tests",
+    "private": true,
+    "type": "module",
+    "description": "The Chrome driver of webrtc's browser lane, on Node built-ins only."
+}
