@@ -263,6 +263,10 @@ void descriptions_follow_promises() {
     std::optional<error_code> early;
     pc.async_add_ice_candidate({.candidate = "candidate:2", .sdp_mid = "0"},
                                [&](error_code ec) { early = ec; });
+    // The end of the remote candidates before a remote description is refused too, as natively.
+    const webrtc::ice_candidate_view end_of_candidates;
+    std::optional<error_code> early_end;
+    pc.async_add_ice_candidate(end_of_candidates, [&](error_code ec) { early_end = ec; });
     std::optional<connection::session_description> local;
     pc.async_set_local_description([&](error_code ec, connection::session_description d) {
         BOOST_TEST(!ec);
@@ -271,8 +275,13 @@ void descriptions_follow_promises() {
     std::optional<error_code> refused;
     pc.async_set_remote_description({.type = webrtc::sdp_type::answer, .sdp = "bad"},
                                     [&](error_code ec) { refused = ec; });
+    // An end that waits for that refused description is refused with it.
+    std::optional<error_code> late_end;
+    pc.async_add_ice_candidate(end_of_candidates, [&](error_code ec) { late_end = ec; });
     settle(io);
     BOOST_TEST(early && *early == webrtc::error::invalid_state);
+    BOOST_TEST(early_end && *early_end == webrtc::error::invalid_state);
+    BOOST_TEST(late_end && *late_end == webrtc::error::invalid_state);
     BOOST_TEST(local && local->type == webrtc::sdp_type::offer && local->sdp == "v=0 local");
     BOOST_TEST(pc.local_description() && pc.local_description()->sdp == "v=0 local");
     BOOST_TEST(refused && *refused == webrtc::error::operation_error);

@@ -181,7 +181,7 @@ public:
             return;
         }
         const std::uint64_t id = next_id_++;
-        op.link(locals_.emplace_back(promised<session_description>{id, nullptr}).op);
+        op.link(locals_.emplace_back(promised<session_description>{id, nullptr, false}).op);
         webcpp_webrtc_set_local(pc_.as_handle(), callback_.as_handle(), static_cast<double>(id));
     }
 
@@ -192,16 +192,19 @@ public:
             return;
         }
         const std::uint64_t id = next_id_++;
-        op.link(others_.emplace_back(promised<>{id, nullptr}).op);
+        op.link(others_.emplace_back(promised<>{id, nullptr, false}).op);
+        remote_in_flight_ = id;
         webcpp_webrtc_set_remote(pc_.as_handle(), static_cast<int>(type),
                                  js_string(sdp).as_handle(), callback_.as_handle(),
                                  static_cast<double>(id));
     }
 
     /**
-     Adds the remote candidate `candidate`. An empty one, the end of the remote candidates, adds
-     none and completes at once, as natively; the browser's own operations chain checks the remote
-     description when the candidate's turn comes.
+     Adds the remote candidate `candidate`; the browser's own operations chain checks the remote
+     description when the candidate's turn comes. An empty one, the end of the remote candidates,
+     adds none: it completes at once, as natively, or with `error::invalid_state` when there is no
+     remote description; while one is being applied, it completes once that one settles, as the
+     chain would order it.
     */
     void add_ice_candidate(const string_type& candidate, const std::optional<string_type>& mid,
                            std::optional<std::uint16_t> index, const string_type& ufrag,
@@ -211,6 +214,14 @@ public:
             return;
         }
         if (candidate.empty()) {
+            if (remote_in_flight_ != 0) {
+                op.link(others_.emplace_back(promised<>{remote_in_flight_, nullptr, true}).op);
+                return;
+            }
+            if (!has_remote_description()) {
+                op.fail(make_error_code(error::invalid_state));
+                return;
+            }
             op.complete({});
             return;
         }
@@ -226,7 +237,7 @@ public:
             init.set("usernameFragment", js_string(ufrag));
         }
         const std::uint64_t id = next_id_++;
-        op.link(others_.emplace_back(promised<>{id, nullptr}).op);
+        op.link(others_.emplace_back(promised<>{id, nullptr, false}).op);
         webcpp_webrtc_add_candidate(pc_.as_handle(), init.as_handle(), callback_.as_handle(),
                                     static_cast<double>(id));
     }
@@ -432,6 +443,8 @@ private:
         std::uint64_t id = 0;
         // Cleared by the operation when it ends, a cancellation included.
         pending<Values...>* op = nullptr;
+        // The end of the remote candidates, waiting for the remote description `id` settles.
+        bool end = false;
     };
 
     /**
@@ -556,18 +569,36 @@ private:
             locals_.erase(found);
             return;
         }
-        const auto found = find(others_, id);
-        if (found == others_.end()) {
-            return;
+        if (remote_in_flight_ == id) {
+            remote_in_flight_ = 0;
         }
-        if (found->op != nullptr) {
-            if (ok) {
-                found->op->complete({});
-            } else {
-                found->op->fail(error_of(event["name"]));
+        // The operation of the promise, then the ends of the remote candidates that waited for
+        // it, a remote description's.
+        for (auto it = others_.begin(); it != others_.end();) {
+            if (it->id != id) {
+                ++it;
+                continue;
             }
+            if (it->op != nullptr) {
+                if (it->end) {
+                    finish_end(*it->op);
+                } else if (ok) {
+                    it->op->complete({});
+                } else {
+                    it->op->fail(error_of(event["name"]));
+                }
+            }
+            it = others_.erase(it);
         }
-        others_.erase(found);
+    }
+
+    // The end of the remote candidates, once the remote description it waited for settled.
+    void finish_end(pending<>& op) {
+        if (has_remote_description()) {
+            op.complete({});
+        } else {
+            op.fail(make_error_code(error::invalid_state));
+        }
     }
 
     template <class List>
@@ -654,6 +685,8 @@ private:
     bool posted_ = false;
     std::uint64_t generation_ = 0;
     std::uint64_t next_id_ = 1;
+    // The remote description being applied, 0 for none.
+    std::uint64_t remote_in_flight_ = 0;
     state_watch<peer_connection_state> state_;
     state_watch<ice_connection_state> ice_;
     event_queue<ice_candidate, Allocator> candidates_;
