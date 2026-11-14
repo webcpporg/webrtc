@@ -21,45 +21,88 @@
 #include <cstddef>
 #include <utility>
 
-#ifdef WEBCPP_TARGET_EMSCRIPTEN
+#ifndef WEBCPP_TARGET_EMSCRIPTEN
+namespace webcpp::webrtc::detail {
+struct runtime_access;
+}  // namespace webcpp::webrtc::detail
+#endif
 
 // In the browser the classes live in an inline namespace named after the unsupported policy, so
 // that translation units that disagree on it name different types and fail to link
-// (design.md, D14).
+// (design.md, D14); natively, where every setting is honoured, they do not.
 // NOLINTNEXTLINE(modernize-concat-nested-namespaces): the policy selects an inline namespace
 namespace webcpp::webrtc {
+#ifdef WEBCPP_TARGET_EMSCRIPTEN
 #ifdef WEBCPP_WEBRTC_UNSUPPORTED_IGNORE
 inline namespace unsupported_ignore {
 #else
 inline namespace unsupported_error {
 #endif
+#endif
 
 /**
- What the page holds for the whole program, which the program owns: the cap of peer connections.
+ What the platform holds for the whole process, or the whole page, which the program owns:
+ natively libdatachannel's threads and global state, and on both targets the cap of peer
+ connections.
 
  A program makes one before any peer connection and destroys it after the last, and after the
- last data channel; `make` takes it by reference, so no connection exists without one. The page's
- count of connections lives in JavaScript, on the page, so that every runtime and every module of
- the page counts in one place, as Chromium counts its own limit: a connection counts from its
- construction until the garbage collector frees it, a closed one included.
+ last data channel; `make` takes it by reference, so no connection exists without one.
+
+ Natively at most one exists at a time in a process, because libdatachannel's state is the
+ process's: a second one's destructor would end the first one's connections. That is a
+ precondition: webrtc keeps no static state to check it with. A native runtime counts the
+ connections made with it.
+
+ In the browser the count is the page's, kept in JavaScript, so that every runtime and every
+ module of the page counts in one place, as Chromium counts its own limit: a connection counts
+ from its construction until the garbage collector frees it, a closed one included.
 
  @see "The runtime", in the guide.
 */
 class runtime {
 public:
     /**
-     Makes the runtime; the browser's threads are its own, so `thread_pool_size` changes nothing.
+     Makes the runtime.
 
-     @param opts The cap of peer connections.
+     Natively it loads libdatachannel's global resources (`rtcPreload`), with its thread pool sized
+     as `opts` says; in the browser, whose threads are its own, `thread_pool_size` changes
+     nothing.
+
+     @param opts The cap of peer connections and, natively, the thread pool's size.
     */
-    explicit runtime(const runtime_options& opts = {}) noexcept : options_(opts) {}
+    explicit runtime(const runtime_options& opts = {}) : options_(opts) {
+#ifndef WEBCPP_TARGET_EMSCRIPTEN
+        if (opts.thread_pool_size != 0) {
+            rtcSetThreadPoolSize(static_cast<unsigned int>(opts.thread_pool_size));
+        }
+        rtcPreload();
+#endif
+    }
 
-    /** Destroys the runtime, which holds nothing of the page. */
-    ~runtime() = default;
+    // In the browser the destructor has nothing to do; natively it does, and one declaration
+    // carries the Doc Comment of both.
+    // NOLINTBEGIN(modernize-use-equals-default)
+    /**
+     Destroys the runtime.
 
-    /** Not copyable: its connections hold it by reference. */
+     Natively it unloads libdatachannel's global resources (`rtcCleanup`), waiting until its
+     threads have stopped, for at most ten seconds, after which libdatachannel gives up; in the
+     browser it holds nothing of the page.
+    */
+    ~runtime() {
+#ifndef WEBCPP_TARGET_EMSCRIPTEN
+        rtcCleanup();
+#endif
+    }
+
+    // NOLINTEND(modernize-use-equals-default)
+
+    /** Not copyable: its connections hold it by reference, and natively it is the process's. */
     runtime(const runtime&) = delete;
-    /** Not copy-assignable: its connections hold it by reference. */
+    /**
+     Not copy-assignable: its connections hold it by reference, and natively it is the
+     process's.
+    */
     runtime& operator=(const runtime&) = delete;
     /** Not movable: its connections hold it by reference. */
     runtime(runtime&&) = delete;
@@ -73,27 +116,56 @@ public:
     */
     [[nodiscard]] const runtime_options& get_options() const noexcept { return options_; }
 
-    // A member, as natively, where it reads the runtime's own count; the page's lives in
-    // JavaScript.
+    // A member on both targets: natively it reads the runtime's own count; in the browser the
+    // page's, which lives in JavaScript.
     // NOLINTBEGIN(readability-convert-member-functions-to-static)
     /**
-     The peer connections of the page that count against the cap: made by webcpp::webrtc, with any
-     runtime, and not yet freed by the garbage collector.
+     The peer connections alive that count against the cap: natively those made with it; in the
+     browser the page's, made by webcpp::webrtc with any runtime and not yet freed by the garbage
+     collector.
 
      @return Their number.
     */
     [[nodiscard]] std::size_t peer_connections() const noexcept {
+#ifdef WEBCPP_TARGET_EMSCRIPTEN
         return detail::browser::census_held();
+#else
+        return live_.load();
+#endif
     }
 
     // NOLINTEND(readability-convert-member-functions-to-static)
 
 private:
+#ifndef WEBCPP_TARGET_EMSCRIPTEN
+    friend struct detail::runtime_access;
+
+    bool acquire() noexcept {
+        std::size_t live = live_.load();
+        do {
+            if (live >= options_.max_peer_connections) {
+                return false;
+            }
+        } while (!live_.compare_exchange_weak(live, live + 1));
+        return true;
+    }
+
+    void release() noexcept { live_.fetch_sub(1); }
+#endif
+
     runtime_options options_;
+#ifndef WEBCPP_TARGET_EMSCRIPTEN
+    // Connections may live on several executors and threads, so the count is atomic.
+    std::atomic<std::size_t> live_{0};
+#endif
 };
 
+#ifdef WEBCPP_TARGET_EMSCRIPTEN
 }  // namespace unsupported_error or unsupported_ignore
+#endif
 }  // namespace webcpp::webrtc
+
+#ifdef WEBCPP_TARGET_EMSCRIPTEN
 
 // NOLINTNEXTLINE(modernize-concat-nested-namespaces): the policy selects an inline namespace
 namespace webcpp::webrtc::detail {
@@ -150,85 +222,6 @@ private:
 #else
 
 namespace webcpp::webrtc {
-
-namespace detail {
-struct runtime_access;
-}  // namespace detail
-
-/**
- What the platform holds for the whole process, which the program owns: natively libdatachannel's
- threads and global state, and on both targets the cap of peer connections.
-
- A program makes one before any peer connection and destroys it after the last, and after the
- last data channel; `make` takes it by reference, so no connection exists without one. Natively at
- most one exists at a time in a process, because libdatachannel's state is the process's: a
- second one's destructor would end the first one's connections. That is a precondition: webrtc
- keeps no static state to check it with.
-
- @see "The runtime", in the guide.
-*/
-class runtime {
-public:
-    /**
-     Loads libdatachannel's global resources, with its thread pool sized as `opts` says.
-
-     @param opts The cap of peer connections and the thread pool's size.
-    */
-    explicit runtime(const runtime_options& opts = {}) : options_(opts) {
-        if (opts.thread_pool_size != 0) {
-            rtcSetThreadPoolSize(static_cast<unsigned int>(opts.thread_pool_size));
-        }
-        rtcPreload();
-    }
-
-    /**
-     Unloads libdatachannel's global resources, waiting until its threads have stopped, for at most
-     ten seconds, after which libdatachannel gives up.
-    */
-    ~runtime() { rtcCleanup(); }
-
-    /** Not copyable: it is the process's state, held once. */
-    runtime(const runtime&) = delete;
-    /** Not copy-assignable: it is the process's state, held once. */
-    runtime& operator=(const runtime&) = delete;
-    /** Not movable: its connections hold it by reference. */
-    runtime(runtime&&) = delete;
-    /** Not move-assignable: its connections hold it by reference. */
-    runtime& operator=(runtime&&) = delete;
-
-    /**
-     The options it was made with.
-
-     @return The options.
-    */
-    [[nodiscard]] const runtime_options& get_options() const noexcept { return options_; }
-
-    /**
-     The peer connections made with it that are alive.
-
-     @return Their number.
-    */
-    [[nodiscard]] std::size_t peer_connections() const noexcept { return live_.load(); }
-
-private:
-    friend struct detail::runtime_access;
-
-    bool acquire() noexcept {
-        std::size_t live = live_.load();
-        do {
-            if (live >= options_.max_peer_connections) {
-                return false;
-            }
-        } while (!live_.compare_exchange_weak(live, live + 1));
-        return true;
-    }
-
-    void release() noexcept { live_.fetch_sub(1); }
-
-    runtime_options options_;
-    // Connections may live on several executors and threads, so the count is atomic.
-    std::atomic<std::size_t> live_{0};
-};
 
 namespace detail {
 
