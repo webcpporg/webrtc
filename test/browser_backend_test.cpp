@@ -606,6 +606,6 @@ int main() {
     the_peers_close();
     the_connections_close();
     a_channel_accepted_late();
-    // io_context::run_for suspends main, whose returned status Asyncify loses.
+    // The io_context's run_for suspends main, whose returned status Asyncify loses.
     return webcpp::test::exit_status(boost::report_errors());
 }

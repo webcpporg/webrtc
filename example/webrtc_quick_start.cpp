@@ -45,6 +45,7 @@ void gather(webrtc::peer_connection& pc, std::function<void()> done) {
             }
         });
 }
+
 // end::gather[]
 
 // tag::signal[]
@@ -79,6 +80,7 @@ void connect(webrtc::peer_connection& a, webrtc::peer_connection& b) {
         });
     });
 }
+
 // end::signal[]
 
 }  // namespace

@@ -390,6 +390,6 @@ int main() {
     a_text_must_be_utf8();
     reads_give_their_default();
     texts_and_bytes_cross();
-    // io_context::run suspends main, whose returned status Asyncify loses.
+    // The io_context's run suspends main, whose returned status Asyncify loses.
     return webcpp::test::exit_status(boost::report_errors());
 }

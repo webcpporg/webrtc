@@ -287,6 +287,7 @@ int main() {
     the_room_left();
     discard_ends_a_wait_unheard();
     an_operation_is_in_its_handlers_allocator();
-    // On emscripten io_context::run may suspend main, whose returned status Asyncify then loses.
+    // On emscripten the io_context's run may suspend main, whose returned status Asyncify then
+    // loses.
     return webcpp::test::exit_status(boost::report_errors());
 }

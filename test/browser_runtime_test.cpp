@@ -130,6 +130,6 @@ int main() {
     test_install_connection();
     the_cap_and_the_census();
     a_refused_constructor_counts_nothing();
-    // io_context::run suspends main, whose returned status Asyncify loses.
+    // The io_context's run suspends main, whose returned status Asyncify loses.
     return webcpp::test::exit_status(boost::report_errors());
 }
