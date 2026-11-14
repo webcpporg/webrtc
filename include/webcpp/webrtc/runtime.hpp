@@ -56,9 +56,13 @@ public:
     /** Unloads libdatachannel's global resources, waiting until its threads have stopped. */
     ~runtime() { rtcCleanup(); }
 
+    /** Not copyable: it is the process's state, held once. */
     runtime(const runtime&) = delete;
+    /** Not copy-assignable: it is the process's state, held once. */
     runtime& operator=(const runtime&) = delete;
+    /** Not movable: its connections hold it by reference. */
     runtime(runtime&&) = delete;
+    /** Not move-assignable: its connections hold it by reference. */
     runtime& operator=(runtime&&) = delete;
 
     /**
@@ -116,7 +120,9 @@ public:
     explicit runtime_slot(runtime& rt) noexcept
         : runtime_(runtime_access::acquire(rt) ? &rt : nullptr) {}
 
+    /** Not copyable: it is one place, given back once. */
     runtime_slot(const runtime_slot&) = delete;
+    /** Not copy-assignable: it is one place, given back once. */
     runtime_slot& operator=(const runtime_slot&) = delete;
 
     /** Moves the place. */
@@ -132,6 +138,7 @@ public:
         return *this;
     }
 
+    /** Gives the place back. */
     ~runtime_slot() { reset(); }
 
     /** Whether it holds a place. */

@@ -34,9 +34,11 @@ webcpp.run events_no_exceptions : events_test.cpp : <exception-handling>off ;
 
 # Two native peers over the loopback, as the build asks and without
 # exceptions; libdatachannel's threads need threading=multi.
+# tag::native[]
 webcpp.run native : native_test.cpp : <library>/webcpp/webrtc//webrtc <threading>multi : native ;
 webcpp.run native_no_exceptions : native_test.cpp
   : <library>/webcpp/webrtc//webrtc <threading>multi <exception-handling>off : native ;
+# end::native[]
 
 # Allocation: the object's state, queues and outputs in its allocator, and
 # nothing of it on libdatachannel's threads.

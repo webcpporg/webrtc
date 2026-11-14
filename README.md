@@ -1,35 +1,57 @@
-# webcpp::webrtc
+# webrtc
 
-The W3C WebRTC data-channel API in Asio's model: peer connections and data channels whose
-operations take completion tokens and run on the user's executor, written once and run natively
-(over libdatachannel's C API) and, from increment 2, in the browser (over its own
-`RTCPeerConnection` and `RTCDataChannel`). Media is out of scope.
+webrtc is a header-only library of WebRTC peer connections and data channels
+for C++20, one of the libraries of [webcpp](https://github.com/webcpporg/webcpp).
 
+Its types and operations carry the names and the shapes of the W3C's WebRTC
+API, `RTCPeerConnection` and `RTCDataChannel`, written in Asio's model: every
+operation takes a completion token and runs its handler on the executor its
+object was made with, every event is a wait the program starts again, and
+every failure is a value. It runs natively over libdatachannel, through its C
+API, with exceptions on and off; the browser implementation, over the page's
+own `RTCPeerConnection`, comes next. Media is out of scope.
+
+<!-- include::example/webrtc_quick_start.cpp[tag=make,indent=0] -->
 ```cpp
-#include <webcpp/webrtc.hpp>
+asio::io_context io;
+webrtc::runtime rt;  // libdatachannel's threads, made before any connection
 
-namespace webrtc = webcpp::webrtc;
+// Host candidates on the loopback only, so that the example needs no network.
+webrtc::configuration config;
+config.bind_address = "127.0.0.1";
 
-webcpp::asio::io_context io;
-webrtc::runtime rt;  // libdatachannel's threads, and the cap of connections
-auto pc = webrtc::peer_connection::make(rt, io.get_executor(), webrtc::configuration{});
-auto channel = pc->create_data_channel("chat");
-pc->async_set_local_description([&](boost::system::error_code ec,
-                                    webrtc::session_description offer) {
-    // send offer.view() to the peer through your signalling
-});
-pc->async_wait_ice_candidate([&](boost::system::error_code ec, webrtc::ice_candidate c) {
-    // trickle c.view() to the peer; an empty candidate ends gathering
-});
+auto a = webrtc::peer_connection::make(rt, io.get_executor(), config).value();
+auto b = webrtc::peer_connection::make(rt, io.get_executor(), config).value();
 ```
 
-A program uses `/webcpp/webrtc//webrtc`. Natively it brings the superproject's pinned
-libdatachannel 0.24.6 (`/webcpp/third_party//libdatachannel`) with its OpenSSL, and needs
-`threading=multi`; it works with exceptions on and off.
+One header, `<webcpp/webrtc.hpp>`, includes the whole library, whose names
+are in the namespace `webcpp::webrtc`. A b2 project uses it through
+`/webcpp/webrtc//webrtc`, which natively brings the superproject's pinned
+libdatachannel 0.24.6 and its OpenSSL, built from their sources, and needs
+`threading=multi`.
 
-This tree is the reference code of the proposal `libraries/webrtc/openspec/changes/genesis` in
-`webcpporg/proposals`: increment 1, the interface and the native implementation, with its tests.
-Its design, its plan and where it stands are there.
+## Building and testing
 
-Distributed under the Boost Software License, Version 1.0. libdatachannel is used unmodified
-under the MPL-2.0, with its nested dependencies under their own licences.
+webrtc is developed inside the webcpp superproject, as a Boost library is
+developed inside Boost:
+
+    git clone --recursive https://github.com/webcpporg/webcpp
+    cd webcpp
+    b2 threading=multi libs/webrtc/test libs/webrtc/example
+
+builds the tests and the examples natively, runs every example and compares
+its output with the `.expected` file beside it; `exception-handling=off`
+does the same without exceptions. `b2 threading=multi
+libs/webrtc/bench//results` measures what reading a message costs.
+
+## Documentation
+
+webrtc's page, with its API reference, is published at
+<https://webcpporg.github.io/libs/webrtc/>; `b2 threading=multi
+libs/webrtc/doc` builds it into `doc/html/index.html`.
+
+## License
+
+Distributed under the [Boost Software License, Version 1.0](LICENSE_1_0.txt).
+Natively webrtc uses libdatachannel unmodified, under the Mozilla Public
+License 2.0, with its nested dependencies under their own licences.

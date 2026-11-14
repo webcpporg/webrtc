@@ -1,0 +1,35 @@
+// Copyright (c) 2026 WebCpp.org
+//
+// Distributed under the Boost Software License, Version 1.0. (See
+// accompanying file LICENSE_1_0.txt or copy at
+// https://www.boost.org/LICENSE_1_0.txt)
+
+[#webrtc-allocation]
+== Memory
+
+`basic_peer_connection<Executor, Allocator>` and
+`basic_data_channel<Executor, Allocator>` take an allocator as a standard
+container does; `peer_connection` and `data_channel` are the two with the
+default executor and `std::allocator<std::byte>`. `make` takes the allocator,
+and a connection's channels use its own:
+
+* *the object's state* is allocated through the object's allocator, on the
+  executor: the connection and its channels, the queues of candidates and of
+  incoming channels, and the text of descriptions, candidates and labels,
+  which the outputs carry, `session_description` and `ice_candidate`
+  holding their strings in it;
+* *an operation's state* is allocated through its completion handler's
+  associated allocator, as Asio's operations are, so a program that binds an
+  allocator to its handlers, or uses one with its coroutines, controls that
+  memory too;
+* *what runs on libdatachannel's threads* allocates through the standard
+  allocator only: the copy an event carries to the executor, and the post
+  that carries it. The object's allocator may be a resource used only on the
+  executor, and it is never touched from another thread;
+* *what the platform holds is its own:* natively, libdatachannel's objects
+  and the messages in its queues, and the copies its C API makes when a
+  message is read (<<webrtc-native-cost,what reading a message costs>>).
+
+The allocator outlives the io_context's pending handlers, since a posted
+completion may hold the state until it runs. None of the types is shareable
+between threads: each is used on its executor.

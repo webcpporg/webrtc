@@ -1,0 +1,77 @@
+// Copyright (c) 2026 WebCpp.org
+//
+// Distributed under the Boost Software License, Version 1.0. (See
+// accompanying file LICENSE_1_0.txt or copy at
+// https://www.boost.org/LICENSE_1_0.txt)
+
+[#webrtc-quick-start]
+== Quick start
+
+Two peers in one program open a data channel and exchange one message each
+way. A real program has its two peers in two processes, often on two
+machines, and carries what each says about itself to the other through a
+signalling channel of its own, a WebSocket or an HTTP request; these two
+hand it over directly, which is the only thing they do differently.
+
+A program makes one `runtime` before any connection: natively it holds
+libdatachannel's threads (<<webrtc-runtime>>). Each connection is made on an
+executor, whose handlers it runs; here both share one `io_context`. The
+configuration binds the connections to the loopback, so that the program
+needs no network:
+
+[source]
+----
+include::{examples}/webrtc_quick_start.cpp[tag=make,indent=0]
+----
+
+`make` returns a `boost::system::result`: a connection past the runtime's
+cap, or a configuration the platform refuses, is an error, not an
+exception.
+
+`a` creates a channel; `b` accepts it once the connection is up. Each side
+waits for what it needs, once: `a` waits for its channel to open and sends
+`hello`, then waits for an answer; `b` waits for the channel, then for a
+message, and answers it. Every handler runs on the `io_context`, and every
+one checks its `error_code`:
+
+[source]
+----
+include::{examples}/webrtc_quick_start.cpp[tag=channel,indent=0]
+----
+
+Then the signalling. `a` makes its offer, the implicit
+`setLocalDescription()` of the W3C, waits until it has gathered its
+candidates, the addresses `b` can reach it at, and gives `b` its local
+description, which by then holds them all; `b` answers the same way:
+
+[source]
+----
+include::{examples}/webrtc_quick_start.cpp[tag=signal,indent=0]
+----
+
+`gather` waits for candidates until the empty one, the end of gathering:
+
+[source]
+----
+include::{examples}/webrtc_quick_start.cpp[tag=gather,indent=0]
+----
+
+Waiting for every candidate before signalling is the simplest form of it.
+<<webrtc-signalling>> shows the other, which sends each candidate as soon as
+it is found, so that the connection starts sooner.
+
+The program runs its `io_context` until both connections are closed, which
+`a` does once it has the answer; it gives up after thirty seconds, so that a
+broken network cannot hang it:
+
+[source]
+----
+include::{examples}/webrtc_quick_start.cpp[tag=run,indent=0]
+----
+
+It prints:
+
+[listing]
+----
+include::{examples}/webrtc_quick_start.expected[]
+----

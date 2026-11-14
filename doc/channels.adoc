@@ -1,0 +1,102 @@
+// Copyright (c) 2026 WebCpp.org
+//
+// Distributed under the Boost Software License, Version 1.0. (See
+// accompanying file LICENSE_1_0.txt or copy at
+// https://www.boost.org/LICENSE_1_0.txt)
+
+[#webrtc-channels]
+== Data channels
+
+A `data_channel` carries messages between two peers over their connection,
+each message whole, text or binary. A connection holds any number of them,
+each with its own label and its own reliability.
+
+[#webrtc-channels-making]
+=== Making one
+
+One peer creates a channel with `create_data_channel(label, init)` and the
+other accepts it with `async_accept_data_channel` once the connection is up.
+`data_channel_init` is the W3C's `RTCDataChannelInit`: `ordered`, at most one
+of `max_packet_life_time` and `max_retransmits` for a channel that may drop
+messages, a `protocol`, and `negotiated` with an `id` for a channel both
+peers create themselves with the same id, which neither announces and
+neither accepts. `create_data_channel` returns a `result`: both reliability
+limits at once, `negotiated` without an `id`, the id 65535, or a label or
+protocol past 65,535 bytes fail with `type_error`; a closed connection with
+`invalid_state`.
+
+A channel is movable and not copyable; it belongs to whoever holds it, and
+its executor's context outlives it. `ready_state()`, `label()`, `id()` and
+`buffered_amount()` read what the W3C's attributes of the same names read.
+`async_wait_open` completes once the channel is open, at once when it already
+is, and with `error::closed` when it closed before it opened.
+
+[#webrtc-channels-receiving]
+=== Receiving
+
+`async_receive(buffer, token)` appends the next message, whole, to the
+caller's dynamic buffer, Asio's first version (`dynamic_buffer` of a string
+or a vector), and completes with its size and whether it was
+text. The buffer outlives the operation. A message larger than the room left
+in the buffer (its `max_size()` less its `size()`) is not read: the
+operation completes with `no_buffer_space` and the message stays queued, for
+a later `async_receive` with a larger buffer.
+
+Messages are kept from the moment the channel exists until they are read, in
+the order they came. *Natively that queue is libdatachannel's*, of 1,024
+messages: past it libdatachannel stops reading from the network and the peer
+is slowed down, a flow control that never fails. But the thread that waits
+for room is the one that delivers every channel of the connection, so *a
+channel nobody reads stalls the connection's other channels* once 1,024 of
+its messages wait. A program reads every channel it holds, or closes it.
+Closing or destroying a channel discards what it holds unread, as the W3C
+discards what arrives once a channel left `open`, and releases the others;
+messages that arrived before the peer closed the channel are still
+delivered, then `async_receive` completes with `error::closed`.
+
+[#webrtc-channels-sending]
+=== Sending
+
+`send(buffers)` and `send_text(text)` queue one message and return at once:
+nothing, or why the message was not queued, as an `error_code`.
+`async_send` and `async_send_text` do the same, and complete once the message
+is queued, at once, posted, for a program that composes operations. A send
+fails, and the channel stays open, when:
+
+* the channel is not open, `invalid_state`;
+* the message is larger than the smaller of `options::max_message_size`,
+  256 KiB by default, and the limit the peer announced, `message_too_large`;
+* queueing it would take the buffered amount past
+  `options::max_buffered_amount`, 16 MiB by default,
+  `buffered_amount_exceeded`;
+* natively, a text holds a zero byte, `operation_not_supported`, since
+  libdatachannel takes a text as a zero-terminated string.
+
+[#webrtc-channels-pacing]
+=== How to pace a large transfer
+
+`buffered_amount()` is what the channel holds to send.
+`async_wait_buffered_amount_low` waits until it is at or under the threshold
+`set_buffered_amount_low_threshold` sets, at once when it already is. A
+sender keeps the buffered amount under a high-water mark of its choosing and
+waits for the low mark before it sends more:
+
+[source]
+----
+include::{examples}/webrtc_pacing.cpp[tag=sender,indent=0]
+----
+
+The receiver reads every message as it comes, which keeps the channel, and
+the connection's other channels, moving:
+
+[source]
+----
+include::{examples}/webrtc_pacing.cpp[tag=receiver,indent=0]
+----
+
+Four MiB go over in messages of 64 KiB, never more than one MiB queued:
+
+[listing]
+----
+include::{examples}/webrtc_pacing.expected[]
+----

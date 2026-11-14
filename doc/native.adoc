@@ -1,0 +1,107 @@
+// Copyright (c) 2026 WebCpp.org
+//
+// Distributed under the Boost Software License, Version 1.0. (See
+// accompanying file LICENSE_1_0.txt or copy at
+// https://www.boost.org/LICENSE_1_0.txt)
+
+[#webrtc-native]
+== The native implementation
+
+[#webrtc-native-libdatachannel]
+=== libdatachannel
+
+Natively webrtc wraps https://github.com/paullouisageneau/libdatachannel[libdatachannel]
+0.24.6. No WebRTC exists in webcpp, in Boost, in the {cpp} Alliance's
+libraries or in the standard library, and libdatachannel is the smallest
+complete implementation of it: data channels without a media engine, ICE
+through libjuice, SCTP through usrsctp, DTLS on the same source-built OpenSSL
+as webcpp::asio's TLS. webrtc uses it unmodified, as a dependency, and copies
+none of its files: the superproject pins it at commit `6b1e2e6`, with its
+nested sources at the commits `tools/libdatachannel/pin.json` lists, and
+builds it from them (<<webrtc-building>>). Nothing of it appears in a public
+header: a program never names libdatachannel.
+
+libdatachannel is distributed under the Mozilla Public License 2.0, and its
+nested dependencies under their own licences, which the superproject's
+third-party table lists. MPL's copyleft is per file: while libdatachannel is
+used unmodified, it reaches none of webcpp's files, which are under the Boost
+Software License alone. A program that distributes a native build of webrtc
+distributes libdatachannel with it, and keeps its licence and notices.
+
+[#webrtc-native-threads]
+=== Threads
+
+libdatachannel runs its own threads, a pool whose size
+`runtime_options::thread_pool_size` sets, and libjuice's and usrsctp's,
+which is why a native program builds with `threading=multi`. Every callback
+of libdatachannel runs on one of them, and webrtc's do one thing there: copy
+what the event carries and post it to the object's executor, through a weak
+reference to the object's state, so that an event posted for an object that
+is gone finds nothing. No handler runs there, and nothing of the program's
+allocator is touched there.
+
+Destroying a connection or a channel runs on the executor: it closes the
+object, then calls libdatachannel's `rtcDelete*`, which waits until the
+callbacks in flight for it have returned and calls none afterwards, as
+libdatachannel documents. The execution context outlives the object, as for
+Asio's I/O objects, which is what keeps a libdatachannel thread from posting
+to a destroyed `io_context`.
+
+[#webrtc-native-exceptions]
+=== Exceptions
+
+libdatachannel reports its errors by throwing, and cannot be built without
+exceptions: the superproject builds its archives with exceptions whatever a
+program asks. Its {cpp} API lets those exceptions reach the caller; its C API
+does not, since every function of it catches what libdatachannel throws and
+returns a negative code instead. webrtc calls the C API only, so a program
+built with `exception-handling=off` uses the native implementation as one
+built with exceptions does, against the same archives, and gets every error
+as a value (<<webrtc-errors-native,the C API's codes>>). No header of webrtc throws, tries or
+catches.
+
+[#webrtc-native-cost]
+=== What reading a message costs
+
+The C API reads a message by copying it out of libdatachannel's queue into
+the caller's memory, `rtcReceiveMessage`, which the {cpp} API's `receive()`
+does not need to, since it moves the message out. webrtc first asks for the
+message's size, to make room for it in the caller's buffer, then reads it:
+two calls, each of which copies the message twice inside libdatachannel,
+four allocations and four copies in all, in libdatachannel's allocator, before
+the copy into the caller's buffer that both ways make.
+
+`bench/receive_bench.cpp` measures it: each round fills the receiver's queue
+with 1,000 messages from a peer on the loopback, then drains them, through
+webrtc's own read and through the {cpp} API's `receive()` and a copy into
+the same buffer, and the time each round took to arrive is measured too.
+On 2026-11-14, on macOS 27.0 on arm64 with Apple clang 21, in release, for
+100,000 binary messages of each size:
+
+[cols="1,2,2,1,2",options="header"]
+|===
+| Size | webrtc, messages a second | `receive()`, messages a second | Time | Arrival on the loopback
+
+| 1 KiB | 4,371,163, 4 allocations each | 12,758,633, none | 2.9 times | 71 MB/s, about 69,000 a second
+| 64 KiB | 131,446, 4 allocations each | 632,404, none | 4.8 times | 124 MB/s, about 1,900 a second
+|===
+
+Reading a message through the C API takes three to five times as long as
+`receive()`, and under 2% of the time the same message took to arrive: the
+transport, not the read, sets the pace. A later version may read into the
+caller's buffer without asking for the size first, which would halve the
+cost. The measurement runs again with
+
+[source,bash]
+----
+b2 threading=multi libs/webrtc/bench//results
+----
+
+[#webrtc-native-constants]
+=== What webrtc quotes of libdatachannel
+
+Some of libdatachannel's constants shape what a program sees, and are checked
+again whenever the pinned commit moves: its receive queue of 1,024 messages
+a channel (`RECV_QUEUE_LIMIT`), the local message size it announces by
+default, 256 KiB, which `options::max_message_size` sets, and the size it
+assumes of a peer that announces none, 64 KiB.

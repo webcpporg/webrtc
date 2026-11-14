@@ -1,0 +1,36 @@
+// Copyright (c) 2026 WebCpp.org
+//
+// Distributed under the Boost Software License, Version 1.0. (See
+// accompanying file LICENSE_1_0.txt or copy at
+// https://www.boost.org/LICENSE_1_0.txt)
+
+[#webrtc-runtime]
+== The runtime
+
+Some of what WebRTC needs belongs to the whole process, or to the whole
+page: natively libdatachannel's thread pool and global state, and on both
+targets the number of connections alive at once. webcpp keeps no global or
+static mutable state, so the program owns it, as a `runtime`:
+
+* it is made before any peer connection, and destroyed after the last
+  connection and the last data channel: `peer_connection::make` takes it by
+  reference, so no connection exists without one;
+* natively, making it loads libdatachannel's global resources, with its
+  thread pool of `runtime_options::thread_pool_size` threads when that is not
+  0, and destroying it waits until libdatachannel's threads have stopped;
+* it caps the connections alive at once at
+  `runtime_options::max_peer_connections`, 256 by default, half of
+  Chromium's limit of 500 per page: `make` past the cap fails with
+  `too_many_peer_connections`, and a connection's place is given back once it
+  is destroyed. `peer_connections()` says how many are alive.
+
+Natively *at most one runtime exists at a time in a process*, because
+libdatachannel's state is the process's: a second runtime's destructor would
+end the first one's connections. It is a precondition, which the library
+does not check: a check would need a flag of the process, the static state
+webcpp keeps none of. A program makes its runtime in `main`, or in the one
+object that owns its connections, and passes it down; a test makes one per
+case, one case after another.
+
+The connections made with one runtime may live on different executors and
+threads; its count is atomic.

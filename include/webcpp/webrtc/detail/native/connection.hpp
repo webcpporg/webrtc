@@ -68,9 +68,15 @@ public:
           channels_(opts.max_queued_channels, allocator),
           registry_(registry_allocator(allocator)) {}
 
+    /** Not copyable: it is shared by its connection and libdatachannel's events, by its address. */
     connection_state(const connection_state&) = delete;
+    /** Not copy-assignable: it is shared by its connection and libdatachannel's events, by its
+     * address. */
     connection_state& operator=(const connection_state&) = delete;
+    /** Not movable: it is shared by its connection and libdatachannel's events, by its address. */
     connection_state(connection_state&&) = delete;
+    /** Not move-assignable: it is shared by its connection and libdatachannel's events, by its
+     * address. */
     connection_state& operator=(connection_state&&) = delete;
 
     /** Deletes libdatachannel's connection, aborting what waits. */

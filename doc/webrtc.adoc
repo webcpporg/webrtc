@@ -1,0 +1,72 @@
+// Copyright (c) 2026 WebCpp.org
+//
+// Distributed under the Boost Software License, Version 1.0. (See
+// accompanying file LICENSE_1_0.txt or copy at
+// https://www.boost.org/LICENSE_1_0.txt)
+
+= webrtc: WebRTC data channels in Asio's model for {cpp}
+:toc: left
+:toclevels: 1
+:idprefix:
+:sectanchors:
+:example-caption!:
+:attribute-missing: warn
+
+webrtc is a header-only {cpp}20 library of peer connections and data
+channels, one of the libraries of
+https://github.com/webcpporg/webcpp[webcpp]. Its types and operations carry
+the names and the shapes of the W3C's WebRTC API, `RTCPeerConnection` and
+`RTCDataChannel`, and they are written in Asio's model: every operation takes
+a completion token, runs its handler on the executor its object was made
+with, and fails as a value. Natively it runs over libdatachannel; in the
+browser, from a later version, over the browser's own objects, so that a
+program is written once for both.
+
+This page teaches webrtc section by section: two peers that talk, how a
+program builds with it, the runtime, signalling, the events, the data
+channels, the errors, cancellation and memory, what the native
+implementation stands on, how it differs from the W3C's API, and what it
+guarantees. Every program it shows is one of the library's examples, which
+the build compiles, runs and compares with the output shown. The
+<<reference,reference>> lists every name the headers declare.
+
+include::overview.adoc[]
+
+include::quick-start.adoc[]
+
+include::building.adoc[]
+
+include::runtime.adoc[]
+
+include::signalling.adoc[]
+
+include::events.adoc[]
+
+include::channels.adoc[]
+
+include::errors.adoc[]
+
+include::cancellation.adoc[]
+
+include::allocation.adoc[]
+
+include::native.adoc[]
+
+include::differences.adoc[]
+
+include::guarantees.adoc[]
+
+include::testing.adoc[]
+
+[#reference]
+== Reference
+
+Every name webrtc declares, in the namespace `webcpp::webrtc` and those
+nested in it, from the Doc Comments of its headers: each class, function,
+type and enumerator with its declaration, what it does, what it asks of its
+caller and how it fails. The other sections teach the library; this one is
+where a name is looked up.
+
+include::{reference}[leveloffset=+1]
+
+include::changelog.adoc[]

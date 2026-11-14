@@ -1,0 +1,92 @@
+// Copyright (c) 2026 WebCpp.org
+//
+// Distributed under the Boost Software License, Version 1.0. (See
+// accompanying file LICENSE_1_0.txt or copy at
+// https://www.boost.org/LICENSE_1_0.txt)
+
+[#webrtc-signalling]
+== Signalling
+
+Two peers connect once each has the other's session description, which says
+what they will exchange, and the other's candidates, the addresses it may be
+reached at. Carrying them is the program's: WebRTC leaves the signalling
+channel to it, a WebSocket, an HTTP request, a relay of its own. webrtc gives
+it the values to carry and the operations that apply them.
+
+[#webrtc-signalling-descriptions]
+=== Descriptions
+
+`async_set_local_description()` makes the local description and applies it,
+as the W3C's `setLocalDescription()` without an argument: an offer, or an
+answer when a remote offer was applied. It completes with the description, a
+`session_description` whose `type` and `sdp` the program sends to the other
+peer, which applies it with `async_set_remote_description(d.view())`. The
+peer that offers sends first; the other answers once the offer is applied.
+
+A description needs something to negotiate, so a peer creates its data
+channels before it offers. Adding a channel later does not negotiate by
+itself: the program calls `async_set_local_description()` again, and the
+peers exchange an offer and an answer once more. The W3C's `createOffer()`,
+`createAnswer()` and `negotiationneeded` are not part of webrtc
+(<<webrtc-differences>>).
+
+`local_description()` is the local description as it is now, with the
+candidates gathered so far; `has_remote_description()` says whether a remote
+one was applied.
+
+[#webrtc-signalling-candidates]
+=== Candidates
+
+Applying a local description starts gathering candidates.
+`async_wait_ice_candidate` waits for the next one; the last, whose
+`candidate` is empty, is the end of gathering. A program either waits for
+the end and sends its local description, which then holds every candidate,
+as the <<webrtc-quick-start,quick start>> does, or sends each candidate as
+it comes, which lets the connection start sooner. The other peer adds each
+with `async_add_ice_candidate(c.view())`; an empty one ends the remote
+candidates and adds none.
+
+A candidate needs the remote description first: one added before it fails
+with `invalid_state`, as in a browser. So a peer applies what it receives in
+the order it was sent, one operation at a time.
+
+[#webrtc-signalling-trickle]
+=== How to trickle candidates
+
+Each peer's end of the signalling channel is an inbox: what the other peer
+said, applied in order, the next operation started once the previous one has
+completed:
+
+[source]
+----
+include::{examples}/webrtc_signalling.cpp[tag=inbox,indent=0]
+----
+
+Each peer sends its candidates as it gathers them, the end included:
+
+[source]
+----
+include::{examples}/webrtc_signalling.cpp[tag=trickle,indent=0]
+----
+
+And each sends its description as soon as it has one, its candidates after
+it, so that the other peer's inbox applies them in that order:
+
+[source]
+----
+include::{examples}/webrtc_signalling.cpp[tag=offer,indent=0]
+----
+
+The program waits until `a` is connected, then closes both connections. It
+prints:
+
+[listing]
+----
+include::{examples}/webrtc_signalling.expected[]
+----
+
+A real signalling channel carries the description's `type` and `sdp`, and
+the candidate's `candidate`, `sdp_mid`, `sdp_m_line_index` and
+`username_fragment`, as text or JSON of the program's choosing; the values
+are the W3C's `RTCSessionDescriptionInit` and `RTCIceCandidateInit`, so a
+peer in a browser reads them as they are.

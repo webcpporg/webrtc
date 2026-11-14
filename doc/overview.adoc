@@ -1,0 +1,46 @@
+// Copyright (c) 2026 WebCpp.org
+//
+// Distributed under the Boost Software License, Version 1.0. (See
+// accompanying file LICENSE_1_0.txt or copy at
+// https://www.boost.org/LICENSE_1_0.txt)
+
+[#webrtc-overview]
+== Overview
+
+WebRTC connects two programs directly, through the networks between them,
+once each has told the other how to reach it. webrtc gives a {cpp} program
+the data-channel half of it: a `peer_connection` negotiates the connection
+with the other peer, and a `data_channel` carries messages over it, text or
+binary, reliable and ordered or not.
+
+The names are the W3C's, so that a reader who knows
+`RTCPeerConnection.setLocalDescription()` knows
+`peer_connection::async_set_local_description`, and the semantics are the
+W3C's where a platform allows them, with every difference stated in
+<<webrtc-differences>>. The model is Asio's:
+
+* every operation is an `async_*` member that takes any completion token, a
+  callback, `use_awaitable`, `use_future` or a deferred token, and runs its
+  handler on the object's executor, `webcpp::asio::any_io_executor` unless
+  the program chooses another;
+* what the W3C delivers as an event, a candidate, a state change, an incoming
+  channel, a message, is a wait the program starts and starts again, as an
+  acceptor's `async_accept` (<<webrtc-events>>);
+* every failure is a value, an `error_code` of the category `webcpp.webrtc`
+  or one of Asio's (<<webrtc-errors>>), and every bound webcpp sets is a
+  named option that fails as a value, never by throwing or blocking.
+
+It runs natively today, over libdatachannel 0.24.6, which the superproject
+builds from its pinned sources (<<webrtc-native>>), with exceptions on and
+off. The browser implementation, over the page's own `RTCPeerConnection`
+through webcpp::asio's bridge, comes in the library's next increment, with
+a lane where a native peer and a browser peer talk to each other; until then
+a header that needs a backend stops with `#error` on emscripten. WASI has no
+WebRTC, neither in a guest nor from a host, so there the headers stop with an
+`#error` that says so.
+
+Media, the tracks, codecs and transceivers of WebRTC, is not part of
+webrtc: it will get an interface of its own. Nor is any integration with
+another library: an actor of webcpp::xactor that needs a peer holds a
+`peer_connection` made on the executor its driver runs on and turns each
+completion into a message to itself.

@@ -38,9 +38,13 @@ using boost::system::error_code;
 template <class... Values>
 class pending {
 public:
+    /** Not copyable: it is freed by whoever ends it, from where it was made. */
     pending(const pending&) = delete;
+    /** Not copy-assignable: it is freed by whoever ends it, from where it was made. */
     pending& operator=(const pending&) = delete;
+    /** Not movable: it is freed by whoever ends it, from where it was made. */
     pending(pending&&) = delete;
+    /** Not move-assignable: it is freed by whoever ends it, from where it was made. */
     pending& operator=(pending&&) = delete;
 
     /** Posts the handler with `ec` and `values`, and frees the operation. */
@@ -69,6 +73,7 @@ public:
 
 protected:
     pending() = default;
+    /** Destroys its handler, its work guards and its fallback values. */
     ~pending() = default;
 
 private:
@@ -128,10 +133,15 @@ public:
           handler_work_(webcpp::asio::get_associated_executor(handler_, executor_)),
           fallback_(std::move(fallback)) {}
 
+    /** Not copyable: it is freed by whoever ends it, from where it was made. */
     operation(const operation&) = delete;
+    /** Not copy-assignable: it is freed by whoever ends it, from where it was made. */
     operation& operator=(const operation&) = delete;
+    /** Not movable: it is freed by whoever ends it, from where it was made. */
     operation(operation&&) = delete;
+    /** Not move-assignable: it is freed by whoever ends it, from where it was made. */
     operation& operator=(operation&&) = delete;
+    /** Destroys its handler, its work guards and its fallback values. */
     ~operation() = default;
 
 private:

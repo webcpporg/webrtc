@@ -93,7 +93,11 @@ public:
         return basic_peer_connection(std::move(state));
     }
 
-    /** Moves the connection, its pending operations included; the source holds none. */
+    /**
+     Moves the connection, its pending operations included; the source holds none.
+
+     @param other The connection moved from.
+    */
     basic_peer_connection(basic_peer_connection&& other) noexcept = default;
 
     /**
@@ -110,7 +114,9 @@ public:
         return *this;
     }
 
+    /** Not copyable: a connection has one owner. */
     basic_peer_connection(const basic_peer_connection&) = delete;
+    /** Not copy-assignable: a connection has one owner. */
     basic_peer_connection& operator=(const basic_peer_connection&) = delete;
 
     /** Closes the connection and completes every pending operation with `operation_aborted`. */
@@ -140,6 +146,7 @@ public:
      A cancellation is terminal only: the description may still be applied after the handler ran
      with `operation_aborted`.
 
+     @tparam CompletionToken The completion token.
      @param token The completion token, of signature `void(error_code, session_description)`.
      @return What the token makes of the operation.
     */
@@ -162,6 +169,7 @@ public:
     /**
      Applies the remote peer's description.
 
+     @tparam CompletionToken The completion token.
      @param description The description, read during the call.
      @param token The completion token, of signature `void(error_code)`.
      @return What the token makes of the operation.
@@ -183,6 +191,7 @@ public:
     /**
      Adds a remote candidate; an empty `candidate` ends the remote gathering and adds none.
 
+     @tparam CompletionToken The completion token.
      @param candidate The candidate, read during the call.
      @param token The completion token, of signature `void(error_code)`;
      `error::invalid_state` before a remote description.
@@ -211,6 +220,7 @@ public:
      While no wait is pending, candidates are kept up to `options::max_queued_candidates`; one
      past it is dropped here and stays in `local_description()`.
 
+     @tparam CompletionToken The completion token.
      @param token The completion token, of signature `void(error_code, ice_candidate)`.
      @return What the token makes of the operation.
     */
@@ -238,6 +248,7 @@ public:
     /**
      Waits for the connection's state to differ from the one the previous wait completed with.
 
+     @tparam CompletionToken The completion token.
      @param token The completion token, of signature `void(error_code, peer_connection_state)`.
      @return What the token makes of the operation.
     */
@@ -257,6 +268,7 @@ public:
     /**
      Waits for the ICE state to differ from the one the previous wait completed with.
 
+     @tparam CompletionToken The completion token.
      @param token The completion token, of signature `void(error_code, ice_connection_state)`.
      @return What the token makes of the operation.
     */
@@ -280,6 +292,7 @@ public:
      While none is pending, channels are kept up to `options::max_queued_channels`; one past it
      is closed at once, as a connection past a listen backlog is refused.
 
+     @tparam CompletionToken The completion token.
      @param token The completion token, of signature `void(error_code, data_channel)`.
      @return What the token makes of the operation.
     */

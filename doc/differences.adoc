@@ -1,0 +1,71 @@
+// Copyright (c) 2026 WebCpp.org
+//
+// Distributed under the Boost Software License, Version 1.0. (See
+// accompanying file LICENSE_1_0.txt or copy at
+// https://www.boost.org/LICENSE_1_0.txt)
+
+[#webrtc-differences]
+== Differences from the W3C's API
+
+webrtc follows the W3C's WebRTC API where a platform allows it. Where one
+does not, the difference is here, with what a program gets instead.
+
+What a target cannot honour follows one rule: by default it fails with
+`operation_not_supported`; under the b2 feature
+`webcpp-webrtc-unsupported=ignore` it is ignored, which a setting may be
+only where the platform does something equivalent of its own. The feature is
+propagated, so a whole program agrees, and setting both
+`WEBCPP_WEBRTC_UNSUPPORTED_ERROR` and `WEBCPP_WEBRTC_UNSUPPORTED_IGNORE`
+stops the build. Natively every setting is honoured; the browser
+implementation will be the first to use the rule.
+
+[cols="2,3",options="header"]
+|===
+| What | What a program gets
+
+| `createOffer()`, `createAnswer()`
+| Not offered. `async_set_local_description()` makes the offer or the answer
+  and applies it, as the W3C's `setLocalDescription()` without an argument
+  does; libdatachannel cannot apply a description made apart from it.
+
+| `negotiationneeded`
+| Not offered: a program negotiates again when it adds a channel to a
+  connection that is up. Natively automatic negotiation is off, so a
+  description exists only when a program asks for one, on both targets.
+
+| `configuration::bind_address`
+| Not a W3C setting: natively, the one local address ICE binds to, which
+  a program on the loopback needs. A browser cannot honour it.
+
+| a local candidate's `sdp_m_line_index` and `username_fragment`
+| Natively libdatachannel gives neither: both are empty, and its `sdp_mid`
+  is enough for a peer, a browser included.
+
+| a remote candidate's `username_fragment`
+| Natively ignored, whatever the policy: libdatachannel makes one ICE
+  session per connection and never restarts it, so every candidate belongs
+  to it, and a candidate's own `ufrag` attribute, when its text has one,
+  still reaches it. A browser peer's candidates carry the field, so refusing
+  it would refuse them.
+
+| a text message holding a zero byte
+| Natively not sent, `operation_not_supported` whatever the policy: the C API
+  takes a text as a zero-terminated string, and cutting the message short
+  silently is never what a program asked for.
+
+| a received message past `options::max_message_size`
+| A peer that keeps to the size announced in the description never sends
+  one. Natively libdatachannel truncates one that comes anyway to that size,
+  with a warning in its log, and webrtc delivers what it kept.
+
+| unread messages
+| Natively they wait in libdatachannel's queue of 1,024 messages a channel,
+  which slows the peer down when it is full, and stalls the connection's
+  other channels until the channel is read or closed
+  (<<webrtc-channels-receiving>>).
+
+| `RTCPeerConnection` and `RTCDataChannel` themselves
+| No native handle, an `rtc` id or a browser object, appears in a public
+  header: what a program needs is a member, and media, for which a handle
+  was once kept, will get an interface of its own.
+|===

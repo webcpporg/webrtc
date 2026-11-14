@@ -1,0 +1,83 @@
+// Copyright (c) 2026 WebCpp.org
+//
+// Distributed under the Boost Software License, Version 1.0. (See
+// accompanying file LICENSE_1_0.txt or copy at
+// https://www.boost.org/LICENSE_1_0.txt)
+
+[#webrtc-guarantees]
+== Guarantees
+
+What webrtc promises, and the tests that hold each promise, which fail when
+the promise breaks. A guarantee keeps its number, and the anchor named after
+it, so a comment of the code or of a test cites it by that anchor:
+`+(doc: #webrtc-invariant-3)+` sends its reader to the third. The tests are
+those of <<webrtc-testing>>.
+
+. [[webrtc-invariant-1]]*Two peers connect and talk.* Two native peers on
+the loopback exchange their descriptions and every candidate, none refused,
+reach `connected`, and carry binary and text messages both ways, each read
+with whether it was text. _Held by_ `native` (`a_full_exchange`) and by every
+example of the page.
+. [[webrtc-invariant-2]]*Every handler runs on the object's executor, and
+never inside the call that started its operation.* An operation satisfied at
+once is posted; nothing of libdatachannel's threads runs a handler. _Held by_
+`events` (`a_satisfied_wait_is_posted`), `native`, and `lifetime` under
+ThreadSanitizer.
+. [[webrtc-invariant-3]]*No event is lost without a rule.* While no wait is
+pending, states coalesce to the latest, candidates queue up to their bound
+with a place kept for the end of gathering, and incoming channels queue up to
+theirs; a second wait of a kind fails with `already_started`, and a cancelled
+wait consumes nothing. _Held by_ `events` (`states_coalesce`,
+`no_change_keeps_waiting`, `one_wait_of_a_kind`,
+`a_cancelled_wait_consumes_nothing`, `the_bound_keeps_a_place_for_the_end`).
+. [[webrtc-invariant-4]]*A channel keeps what it received before its first
+read.* Messages are kept from the channel's creation until `async_receive`
+reads them, in order. _Held by_ `native` (`received_before_the_first_receive`).
+. [[webrtc-invariant-5]]*`close()` delivers no state change.* A closed
+connection's pending operations complete with `operation_aborted`, its
+channels close with `error::closed`, and a later wait fails with
+`error::closed`; a channel closed by its owner completes its
+`async_wait_close`. _Held by_ `native` (`close_fires_no_state_change`,
+`a_channel_closed_by_its_owner`) and `events`
+(`close_aborts_and_then_refuses`).
+. [[webrtc-invariant-6]]*`run()` returns once the connections are closed.* A
+pending operation is outstanding work, and a program that starts its waits
+again keeps `run()` running until it closes its connection. _Held by_
+`native` (`run_returns_once_closed`).
+. [[webrtc-invariant-7]]*Every failure is a value.* Of the category
+`webcpp.webrtc`, whose ten values are fixed, or one of Asio's; nothing
+throws, with exceptions on or off. _Held by_ `error`, `native`
+(`errors_as_values`) and the example `webrtc_errors`.
+. [[webrtc-invariant-8]]*A refused send or receive leaves the channel as it
+was.* A send past the message size or the buffered amount fails and the
+channel stays open; a message larger than the room left in the caller's
+buffer fails with `no_buffer_space` and stays queued, then reads into a
+larger buffer. _Held by_ `native` (`bounds`).
+. [[webrtc-invariant-9]]*The native implementation works without
+exceptions.* Built with `exception-handling=off`, against libdatachannel's
+archives built with exceptions, it behaves as with them. _Held by_
+`native_no_exceptions`, `events_no_exceptions`, and every header compiled
+alone without exceptions.
+. [[webrtc-invariant-10]]*The object's memory is its allocator's, on its
+executor.* Its state, queues and outputs are allocated through it, an
+operation's state through its handler's allocator, and nothing of the
+object's allocator is touched on libdatachannel's threads. _Held by_
+`allocation` (`state_queues_and_outputs_in_the_allocator`) and `events`
+(`an_operation_is_in_its_handlers_allocator`).
+. [[webrtc-invariant-11]]*Destruction is safe while events arrive.* A
+connection and its channels destroyed while the peer floods them touch
+nothing afterwards, round after round. _Held by_ `lifetime`
+(`destroyed_while_messages_arrive`), 100 rounds under ThreadSanitizer.
+. [[webrtc-invariant-12]]*A channel never read stalls its connection's
+others, and its destruction releases them.* Past 1,024 unread messages,
+natively, a message on another channel of the connection does not arrive;
+destroying the flooded channel releases it, and returns in under two
+seconds. _Held by_ `stall` and `lifetime`
+(`a_flooded_channel_is_destroyed_promptly`), so that a change of
+libdatachannel's behaviour fails them and this page changes with it.
+. [[webrtc-invariant-13]]*The runtime caps the connections alive at once.*
+`make` past the cap fails with `too_many_peer_connections`, and a
+connection's place follows its moves and is given back when it is
+destroyed. _Held by_ `native` (`errors_as_values`, `destruction_and_moves`).
+. [[webrtc-invariant-14]]*A negotiated channel opens on both peers with the
+same id, and neither accepts it.* _Held by_ `native` (`a_negotiated_channel`).

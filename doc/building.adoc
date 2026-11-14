@@ -1,0 +1,57 @@
+// Copyright (c) 2026 WebCpp.org
+//
+// Distributed under the Boost Software License, Version 1.0. (See
+// accompanying file LICENSE_1_0.txt or copy at
+// https://www.boost.org/LICENSE_1_0.txt)
+
+[#webrtc-building]
+== Building a program
+
+webrtc is header-only. A program inside a webcpp checkout names its target,
+`/webcpp/webrtc//webrtc`, which brings the headers, webcpp::config,
+webcpp::asio and, natively, libdatachannel:
+
+[listing]
+----
+include::{library-root}/build.jam[tag=webrtc]
+----
+
+Natively that target is `/webcpp/third_party//libdatachannel`: libdatachannel
+0.24.6 with libjuice, libsrtp, usrsctp and plog, built by the superproject
+from the sources it pins, as static archives, with the program's compiler and
+runtime settings, over the same source-built OpenSSL as webcpp::asio's TLS.
+A first build makes them, and later builds reuse them. The submodule is
+initialized once:
+
+[source,bash]
+----
+git submodule update --init --recursive third_party/libs/libdatachannel
+git submodule update --init third_party/libs/openssl
+----
+
+libdatachannel runs threads of its own, so a native program builds with
+`threading=multi`; a request for `threading=single` stops the build, naming
+the fix. webrtc works with exceptions on and off: natively it calls
+libdatachannel through its C API, which catches every exception
+libdatachannel throws and returns a code
+(<<webrtc-native-exceptions,exceptions>>), so a program built with
+`exception-handling=off` needs nothing more:
+
+[source,bash]
+----
+b2 threading=multi libs/webrtc/example
+b2 threading=multi exception-handling=off libs/webrtc/example
+----
+
+The convenience header `<webcpp/webrtc.hpp>` includes every public header.
+`<webcpp/webrtc/config.hpp>` defines `WEBCPP_WEBRTC_NO_EXCEPTIONS` exactly
+when webcpp has no exceptions, as every webcpp library's configuration does,
+and stops with `#error` on WASI, where no WebRTC exists. On emscripten the
+headers that need a backend stop with `#error` until the browser
+implementation arrives.
+
+The b2 feature `webcpp-webrtc-unsupported=error|ignore`, propagated, chooses
+what a setting a target cannot honour does: fail with
+`operation_not_supported`, the default, or be ignored
+(<<webrtc-differences>>). Natively every setting is honoured, so the feature
+changes nothing there yet.

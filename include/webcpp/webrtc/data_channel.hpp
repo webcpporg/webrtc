@@ -67,7 +67,11 @@ public:
     /** The allocator of its state. */
     using allocator_type = Allocator;
 
-    /** Moves the channel, its pending operations included; the source holds none. */
+    /**
+     Moves the channel, its pending operations included; the source holds none.
+
+     @param other The channel moved from.
+    */
     basic_data_channel(basic_data_channel&& other) noexcept = default;
 
     /**
@@ -84,7 +88,9 @@ public:
         return *this;
     }
 
+    /** Not copyable: a channel has one owner, who reads it. */
     basic_data_channel(const basic_data_channel&) = delete;
+    /** Not copy-assignable: a channel has one owner, who reads it. */
     basic_data_channel& operator=(const basic_data_channel&) = delete;
 
     /** Closes the channel and completes every pending operation with `operation_aborted`. */
@@ -110,6 +116,7 @@ public:
     /**
      Waits for the channel to open; completes at once, posted, when it is open.
 
+     @tparam CompletionToken The completion token.
      @param token The completion token, of signature `void(error_code)`; `error::closed` when the
      channel closed first.
      @return What the token makes of the operation.
@@ -128,6 +135,7 @@ public:
     /**
      Waits for the channel to close; completes at once, posted, when it is closed.
 
+     @tparam CompletionToken The completion token.
      @param token The completion token, of signature `void(error_code)`.
      @return What the token makes of the operation.
     */
@@ -149,6 +157,8 @@ public:
      with `no_buffer_space`. Once the peer closed the channel, the messages it sent before are
      still delivered, then the operation completes with `error::closed`.
 
+     @tparam DynamicBuffer A dynamic buffer of Asio's first version.
+     @tparam CompletionToken The completion token.
      @param buffer A dynamic buffer (Asio's first version, as `beast::flat_buffer`), which
      outlives the operation.
      @param token The completion token, of signature `void(error_code, std::size_t, bool)`: the
@@ -171,6 +181,8 @@ public:
     /**
      Sends a binary message, completing once it is queued, at once, posted.
 
+     @tparam ConstBufferSequence A sequence of constant buffers.
+     @tparam CompletionToken The completion token.
      @param buffers The message, read during the call.
      @param token The completion token, of signature `void(error_code)`.
      @return What the token makes of the operation.
@@ -190,6 +202,7 @@ public:
     /**
      Sends a text message, completing once it is queued, at once, posted.
 
+     @tparam CompletionToken The completion token.
      @param text The message, UTF-8, read during the call.
      @param token The completion token, of signature `void(error_code)`.
      @return What the token makes of the operation.
@@ -208,6 +221,7 @@ public:
     /**
      Waits for `buffered_amount()` to be at or below the threshold; at once, posted, when it is.
 
+     @tparam CompletionToken The completion token.
      @param token The completion token, of signature `void(error_code)`.
      @return What the token makes of the operation.
     */
@@ -225,6 +239,7 @@ public:
     /**
      Sends a binary message: queues it, or fails.
 
+     @tparam ConstBufferSequence A sequence of constant buffers.
      @param buffers The message, read during the call.
      @return `error::invalid_state` when the channel is not open, `error::message_too_large` past
      the smaller of `options::max_message_size` and the peer's limit,

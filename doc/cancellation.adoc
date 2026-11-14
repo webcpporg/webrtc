@@ -1,0 +1,36 @@
+// Copyright (c) 2026 WebCpp.org
+//
+// Distributed under the Boost Software License, Version 1.0. (See
+// accompanying file LICENSE_1_0.txt or copy at
+// https://www.boost.org/LICENSE_1_0.txt)
+
+[#webrtc-cancellation]
+== Cancellation
+
+Every operation installs a handler on its completion handler's associated
+cancellation slot, as Asio's operations do, so `bind_cancellation_slot`,
+`cancel_after` and an awaitable operator's cancellation reach it. Each
+operation states the types of cancellation it supports:
+
+[cols="2,1,3",options="header"]
+|===
+| Operation | Supports | A cancellation
+
+| the waits of <<webrtc-events>> and `async_receive`
+| terminal, partial, total
+| completes it with `operation_aborted`; it consumes no event and no message,
+  which the next wait gets
+
+| `async_set_local_description`, `async_set_remote_description`
+| terminal
+| completes it with `operation_aborted`; the description may still be
+  applied, after the handler ran, since the platform's own operation cannot
+  be called back
+
+| `async_add_ice_candidate`, `async_send`, `async_send_text`
+| terminal, partial, total
+| none in practice: each completes at once, posted
+|===
+
+A cancellation of a type an operation does not support is ignored, as Asio
+ignores it.

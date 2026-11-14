@@ -26,6 +26,8 @@ alias headers : : : : <include>include <library>/webcpp/config//config
 
 # Natively, libdatachannel through its C API, which works with exceptions on
 # and off (design.md, D4): no <exception-handling> is required of a consumer.
+# tag::webrtc[]
 alias webrtc : : <toolset>emscripten : : <library>headers <library>/webcpp/asio//asio ;
 alias webrtc : : : : <library>headers <library>/webcpp/asio//asio
   <library>/webcpp/third_party//libdatachannel ;
+# end::webrtc[]

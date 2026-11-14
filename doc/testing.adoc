@@ -1,0 +1,108 @@
+// Copyright (c) 2026 WebCpp.org
+//
+// Distributed under the Boost Software License, Version 1.0. (See
+// accompanying file LICENSE_1_0.txt or copy at
+// https://www.boost.org/LICENSE_1_0.txt)
+
+[#webrtc-testing]
+== Testing
+
+[#webrtc-testing-program]
+=== Testing a program that uses webrtc
+
+A test needs neither the network nor a second machine: two peers in one
+process, each made with `configuration::bind_address` set to `"127.0.0.1"`
+and no ICE server, connect through the loopback's host candidate alone, as
+the examples of this page do. The test hands each peer's descriptions and
+candidates to the other directly, in place of its signalling channel
+(<<webrtc-signalling-trickle,trickling candidates>>), runs the `io_context` with a limit, so that
+a broken exchange fails rather than hangs, and makes one `runtime` per case,
+one case after another (<<webrtc-runtime>>).
+
+[#webrtc-testing-library]
+=== How webrtc is tested
+
+webrtc's tests are under `test/`, each declared in `test/Jamfile`, and each
+guarantee of <<webrtc-guarantees>> names the tests that hold it. They run
+natively, {n-tests} tests in all, with every connection on the loopback and
+no STUN, so that a lane with no network but the loopback runs them whole. The
+native suite runs as the build asks and without exceptions:
+
+[listing]
+----
+include::{library-root}/test/Jamfile[tag=native]
+----
+
+[cols="1,3",options="header"]
+|===
+| Test | What it checks
+
+| the public headers
+| Each compiled alone, with libdatachannel, as the build asks and, through
+  the lint, without exceptions.
+
+| `config`, `config_developer_defined`, `config_all_off`
+| `<webcpp/webrtc/config.hpp>` defines `WEBCPP_WEBRTC_NO_EXCEPTIONS` exactly
+  when webcpp has no exceptions, and keeps it when a developer defines it in
+  a build that has them.
+
+| `error`, `types`
+| The category's name and fixed values, a message for each, the options'
+  defaults, and the value types: their defaults, a description's and a
+  candidate's view, and their text in a polymorphic allocator.
+
+| `events`, `events_no_exceptions`
+| The event machinery both implementations share, without a platform:
+  states coalesce, one wait of a kind, a cancelled wait consumes nothing,
+  the bound keeps a place for the end of gathering, a satisfied wait is
+  posted, `close` aborts and then refuses, and an operation lives in its
+  handler's allocator.
+
+| `native`, `native_no_exceptions`
+| Two peers on the loopback: a full exchange, messages received before the
+  first read, a negotiated channel, errors as values, the bounds, `close`,
+  a channel closed by its owner, destruction and moves, and `run()`
+  returning once closed.
+
+| `allocation`
+| A connection pair over a polymorphic allocator on a counting resource:
+  the state, the queues and the outputs allocate there, and nothing of it on
+  another thread than the one that runs the `io_context`.
+
+| `lifetime`
+| Connections and channels destroyed while the peer floods them, repeated,
+  and a channel flooded and never read destroyed in under two seconds.
+
+| `stall`
+| A channel past 1,024 unread messages stalls its connection's others, and
+  its far end's destruction releases them.
+
+| `bench`
+| The receive benchmark's smoke pass (<<webrtc-native-cost,what reading a message costs>>): a few rounds
+  of each path, each message checked.
+|===
+
+From the root of a webcpp checkout, each of these builds and runs the
+tests and the examples, natively, without exceptions, and under the
+sanitizers:
+
+[source,bash]
+----
+b2 threading=multi libs/webrtc/test libs/webrtc/example
+b2 threading=multi exception-handling=off libs/webrtc/test libs/webrtc/example
+b2 threading=multi address-sanitizer=norecover undefined-sanitizer=norecover libs/webrtc/test
+----
+
+The lifetime test runs under ThreadSanitizer too, 100 rounds, which checks
+webrtc's side of every hand-off between libdatachannel's threads and the
+executor; libdatachannel's archives are not instrumented:
+
+[source,bash]
+----
+b2 threading=multi thread-sanitizer=on define=WEBCPP_TEST_WEBRTC_REPEAT=100 libs/webrtc/test//lifetime libs/webrtc/test//native
+----
+
+b2 compares timestamps, so a result that counts is built from scratch, with
+`b2 -a`. The CI runs the tests on every native compiler of webcpp's lanes,
+GCC, Clang on `libstdc++`, Apple Clang and MSVC, and the test matrix of every
+run is at https://webcpporg.github.io/report/.

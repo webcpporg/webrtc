@@ -1,0 +1,85 @@
+// Copyright (c) 2026 WebCpp.org
+//
+// Distributed under the Boost Software License, Version 1.0. (See
+// accompanying file LICENSE_1_0.txt or copy at
+// https://www.boost.org/LICENSE_1_0.txt)
+
+[#webrtc-events]
+== Events
+
+What the W3C delivers as an event, webrtc delivers as the completion of a
+wait the program starts, and starts again when it wants the next one, as an
+acceptor's `async_accept`. Every handler then runs on the object's executor,
+and nothing outlives what the program holds:
+
+[cols="2,3",options="header"]
+|===
+| The W3C's event | The wait
+
+| `icecandidate` | `peer_connection::async_wait_ice_candidate`
+| `connectionstatechange` | `peer_connection::async_wait_state_change`
+| `iceconnectionstatechange` | `peer_connection::async_wait_ice_connection_state_change`
+| `datachannel` | `peer_connection::async_accept_data_channel`
+| `open` | `data_channel::async_wait_open`
+| `close` | `data_channel::async_wait_close`
+| `bufferedamountlow` | `data_channel::async_wait_buffered_amount_low`
+| `message` | `data_channel::async_receive`
+|===
+
+[#webrtc-events-policies]
+=== While no wait is pending
+
+An event can happen while the program has no wait of its kind pending, and
+each kind says what becomes of it, so that none is lost without a rule:
+
+* *A state coalesces.* A wait for a state change completes with the current
+  state once it differs from the one the previous wait completed with, so a
+  program that waits late sees the latest state, not every step to it.
+* *Candidates queue* up to `options::max_queued_candidates`, 64 by default,
+  in order; past it a candidate is dropped from the queue and stays in
+  `local_description()`. The end of gathering has a place of its own past
+  the bound, so it is never dropped.
+* *Incoming channels queue* up to `options::max_queued_channels`, 16 by
+  default; a channel past it is closed at once, as a connection past a
+  listen backlog is refused.
+* *Messages are kept* from the channel's creation until `async_receive`
+  reads them (<<webrtc-channels-receiving>>), so a channel accepted late, or
+  handed from one owner to another, loses nothing it received before.
+* `open`, `close` and the buffered amount are states: a wait started after
+  the channel opened, closed, or fell under its threshold completes at once,
+  posted.
+
+*One wait of a kind at a time.* A second wait of the same kind on the same
+object completes with `already_started`, and the first stays pending. A
+cancelled wait (<<webrtc-cancellation>>) consumes no event: the next wait
+gets what it would have got.
+
+[#webrtc-events-work]
+=== Waits and the `io_context`
+
+A pending operation is outstanding work on the object's executor and on its
+handler's, as an Asio operation is: natively, `run()` does not return while
+a candidate or a state change is awaited. A program that starts its waits
+again after each completion keeps `run()` running until it closes the
+connection, and closing is how it ends. What arrives while no wait is pending
+is no work: a queued candidate or message does not keep `run()` alive.
+
+[#webrtc-events-close]
+=== Closing
+
+`peer_connection::close()` is the W3C's `close()`: every pending operation of
+the connection completes with `operation_aborted`, `state()` reads `closed`,
+and no state change is delivered for it. Its channels then close, and their
+pending operations complete with `error::closed`. A wait started on a closed
+connection completes with `error::closed`.
+
+`data_channel::close()` completes the channel's pending operations with
+`operation_aborted`, except `async_wait_close`, which completes once the
+channel is closed. When a channel closes for another reason, the peer, its
+connection, its transport, its pending operations complete with
+`error::closed` and `async_wait_close` completes without an error: that is
+how a program learns that the other side is gone.
+
+Destroying a connection or a channel closes it first. Natively the
+destructor then waits until libdatachannel's callbacks in flight for it have
+returned, so nothing of it is touched afterwards (<<webrtc-native>>).

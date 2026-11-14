@@ -1,0 +1,83 @@
+// Copyright (c) 2026 WebCpp.org
+//
+// Distributed under the Boost Software License, Version 1.0. (See
+// accompanying file LICENSE_1_0.txt or copy at
+// https://www.boost.org/LICENSE_1_0.txt)
+
+[#webrtc-errors]
+== Errors
+
+Every failure is a value. An operation completes with a
+`boost::system::error_code`; `make` and `create_data_channel` return a
+`boost::system::result`; `send` returns an `error_code`. None throws, with
+exceptions on or off, and none blocks.
+
+[#webrtc-errors-category]
+=== The category `webcpp.webrtc`
+
+`webcpp::webrtc::error` holds what has no counterpart among Asio's codes. Its
+values are fixed and never reused, and five of them are the W3C's
+`DOMException` names, so that a failure reads the same as in a browser:
+
+[cols="1,3",options="header"]
+|===
+| Value | When
+
+| `invalid_state` (1) | The W3C's `InvalidStateError`: a candidate before a remote description, a send on a channel that is not open, an operation on a closed connection.
+| `operation_error` (2) | The W3C's `OperationError`: the platform refused an operation, as a description it cannot parse.
+| `invalid_access` (3) | The W3C's `InvalidAccessError`.
+| `type_error` (4) | The W3C's `TypeError`: an argument out of its range, as both reliability limits of one channel.
+| `syntax_error` (5) | The W3C's `SyntaxError`: an ICE server URL that cannot be parsed.
+| `closed` (6) | The channel or the connection closed under a pending operation.
+| `message_too_large` (7) | A message past `options::max_message_size` or the peer's limit.
+| `buffered_amount_exceeded` (8) | A send that would pass `options::max_buffered_amount`.
+| `receive_overflow` (9) | In the browser, unread messages past `options::max_received_bytes`.
+| `too_many_peer_connections` (10) | `make` past `runtime_options::max_peer_connections`.
+|===
+
+Asio's codes keep their meaning beside them, through `webcpp::asio::error`:
+`operation_aborted` for an operation cancelled or ended by `close()` or a
+destruction, `already_started` for a second wait of one kind,
+`operation_not_supported` for what a target cannot honour, and
+`no_buffer_space` for a message larger than the room left in the caller's
+buffer.
+
+[#webrtc-errors-example]
+=== What a program gets back
+
+[source]
+----
+include::{examples}/webrtc_errors.cpp[tag=errors,indent=0]
+----
+
+It prints, the candidate's line last, since an operation's handler runs on
+the `io_context` while the other calls return their error at once:
+
+[listing]
+----
+include::{examples}/webrtc_errors.expected[]
+----
+
+[#webrtc-errors-native]
+=== Natively
+
+What the W3C checks before it calls the platform, webrtc checks too: a closed
+connection (`invalid_state`), a candidate before a remote description
+(`invalid_state`), the channel settings of <<webrtc-channels-making,making a channel>>
+(`type_error`), and the sends of <<webrtc-channels-sending,sending>>. What the C API
+of libdatachannel then refuses comes back as a negative code, which becomes,
+call by call, the error a browser gives for the same call, and
+`operation_error` where nothing more precise applies:
+
+[cols="2,2,2",options="header"]
+|===
+| Call | `RTC_ERR_INVALID` | `RTC_ERR_FAILURE`
+
+| `rtcCreatePeerConnection` | `syntax_error`: an ICE server URL | `operation_error`
+| `rtcSetLocalDescription` | `operation_error` | `operation_error`: nothing to negotiate
+| `rtcSetRemoteDescription` | `operation_error`: it cannot be parsed, as Chromium reports it | `invalid_state`: the signalling state refuses it
+| `rtcAddRemoteCandidate` | `operation_error` | `operation_error`
+| `rtcCreateDataChannelEx` | `operation_error` | `operation_error`
+| `rtcSendMessage` | `operation_error` | `invalid_state`: it closed meanwhile
+| `rtcReceiveMessage` | `operation_error` | `operation_error`
+|===
