@@ -92,9 +92,9 @@ public:
     static constexpr std::size_t message_record_bytes = sizeof(message) + (2 * sizeof(void*));
 
     /** Makes the state of a channel of the connection `connection`, not yet attached. */
-    channel_state(const Executor& executor, const Allocator& allocator, const options& opts,
+    channel_state(Executor executor, const Allocator& allocator, const options& opts,
                   emscripten::val connection)
-        : executor_(executor),
+        : executor_(std::move(executor)),
           allocator_(allocator),
           label_(typename string_type::allocator_type(allocator)),
           connection_(std::move(connection)),
@@ -361,10 +361,14 @@ public:
         ++generation_;
         posted_ = false;
         accepting_ = false;
-        for (pending<>** slot : {&open_, &close_, &low_}) {
-            if (*slot != nullptr) {
-                (*slot)->discard();
-            }
+        if (open_ != nullptr) {
+            open_->discard();
+        }
+        if (close_ != nullptr) {
+            close_->discard();
+        }
+        if (low_ != nullptr) {
+            low_->discard();
         }
         if (receive_ != nullptr) {
             receive_->discard();
