@@ -150,7 +150,8 @@ void unread_messages_past_the_budget() {
 }
 
 // A received message past max_message_size, which a browser cannot announce to its peer, closes
-// the channel with message_too_large, after the messages that came before it.
+// the channel with message_too_large; what was read before it stays read. The large message leaves
+// once the first was read, since a channel that closes discards what it holds unread.
 void a_received_message_past_the_size() {
     webrtc::options strict;
     strict.max_message_size = 1024;
@@ -167,13 +168,15 @@ void a_received_message_past_the_size() {
         ca.emplace(std::move(a));
         cb.emplace(std::move(b));
         BOOST_TEST(!ca->send_text("first"));
-        const auto large = message(2000, 'x');
-        BOOST_TEST(!ca->send(asio::buffer(large)));
         ca->async_wait_close([&](error_code ec) {
             peer_saw = ec;
             both();
         });
-        read_messages(*cb, got, until_it_fails, both);
+        read_messages(*cb, got, 1, [&] {
+            const auto large = message(2000, 'x');
+            BOOST_TEST(!ca->send(asio::buffer(large)));
+            read_messages(*cb, got, until_it_fails, both);
+        });
     });
     p.run();
     read_exactly(got, {"first"});
