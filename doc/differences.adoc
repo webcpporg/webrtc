@@ -40,6 +40,13 @@ decides `configuration::bind_address` (<<webrtc-browser-policy>>).
   with `operation_not_supported`, or ignores it under
   `webcpp-webrtc-unsupported=ignore`.
 
+| a `stuns:` ICE server URL
+| Natively not one: libdatachannel knows `stun:`, `turn:` and `turns:` alone,
+  so `make` fails, the whole configuration with it, with `syntax_error`, as
+  for a URL it cannot parse. In the browser a URL whose scheme the browser
+  knows is its own to use: a browser that refuses one fails `make` with the
+  error its constructor names.
+
 | a local candidate's `sdp_m_line_index` and `username_fragment`
 | Natively libdatachannel gives neither: webrtc sets `sdp_m_line_index` to
   0, the connection's one data section, and leaves `username_fragment`

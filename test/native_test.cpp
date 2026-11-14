@@ -252,6 +252,17 @@ void errors_as_values() {
     const auto refused = webrtc::peer_connection::make(rt, io.get_executor(), bad);
     BOOST_TEST(refused.has_error() && refused.error() == webrtc::error::syntax_error);
     BOOST_TEST_EQ(rt.peer_connections(), 0u);
+    // A stuns: URL, which the W3C admits, is no scheme libdatachannel knows (the table of
+    // differences).
+    const std::array<std::string_view, 1> secure_urls{"stuns:stun.example.org:5349"};
+    webrtc::ice_server secure_server;
+    secure_server.urls = secure_urls;
+    const std::array<webrtc::ice_server, 1> secure_servers{secure_server};
+    webrtc::configuration secure = config;
+    secure.ice_servers = secure_servers;
+    const auto unknown = webrtc::peer_connection::make(rt, io.get_executor(), secure);
+    BOOST_TEST(unknown.has_error() && unknown.error() == webrtc::error::syntax_error);
+    BOOST_TEST_EQ(rt.peer_connections(), 0u);
 
     auto made = webrtc::peer_connection::make(rt, io.get_executor(), config);
     webcpp::test::require(BOOST_TEST(made.has_value()));

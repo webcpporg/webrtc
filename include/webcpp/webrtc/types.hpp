@@ -87,7 +87,11 @@ enum class ice_transport_policy {
 
 /** A STUN or TURN server, the W3C's `RTCIceServer`, read during the call that takes it. */
 struct ice_server {
-    /** Its URLs, `stun:host:port` or `turn:host:port?transport=udp`. */
+    /**
+     Its URLs, `stun:host:port` or `turn:host:port?transport=udp`. Natively `stuns:` is not one:
+     libdatachannel knows `stun:`, `turn:` and `turns:` alone, and `make` fails with
+     `error::syntax_error` (the table of differences).
+    */
     std::span<const std::string_view> urls{};
     /** The TURN user name, empty for STUN. */
     std::string_view username{};

@@ -491,11 +491,11 @@ private:
     // Feeds the staged arrivals to the waits, on the executor.
     void drain() {
         posted_ = false;
-        if (staged_state_) {
-            state_.update(*std::exchange(staged_state_, std::nullopt));
+        if (const auto changed = std::exchange(staged_state_, std::nullopt)) {
+            state_.update(*changed);
         }
-        if (staged_ice_) {
-            ice_.update(*std::exchange(staged_ice_, std::nullopt));
+        if (const auto ice_changed = std::exchange(staged_ice_, std::nullopt)) {
+            ice_.update(*ice_changed);
         }
         staged_counted_ = 0;
         staged_channels_ = 0;
