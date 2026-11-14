@@ -6,8 +6,8 @@
 
 // Two native peers in one process, bound to the loopback and signalled in memory: the first
 // offers, the second answers, and each trickles its candidates to the other until its gathering
-// ends. Every wait it starts stops re-arming once its work is done, so that io_context::run
-// returns when a test's exchange is over.
+// ends. Every wait it starts stops re-arming once its work is done, so that the io_context's
+// run returns when a test's exchange is over.
 
 #ifndef WEBCPP_TEST_WEBRTC_PAIR_HPP
 #define WEBCPP_TEST_WEBRTC_PAIR_HPP

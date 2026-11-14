@@ -105,22 +105,22 @@ void connect(webrtc::peer_connection& a, webrtc::peer_connection& b) {
             return;
         }
         gather(a, [&] {
-            b.async_set_remote_description(
-                a.local_description().value().view(), [&](error_code ec) {
-                    if (ec) {
-                        return;
-                    }
-                    b.async_set_local_description(
-                        [&](error_code ec, const webrtc::session_description&) {
-                            if (ec) {
-                                return;
-                            }
-                            gather(b, [&] {
-                                a.async_set_remote_description(b.local_description().value().view(),
-                                                               [](error_code) {});
-                            });
+            const auto offer = a.local_description().value();
+            b.async_set_remote_description(offer.view(), [&](error_code ec) {
+                if (ec) {
+                    return;
+                }
+                b.async_set_local_description(
+                    [&](error_code ec, const webrtc::session_description&) {
+                        if (ec) {
+                            return;
+                        }
+                        gather(b, [&] {
+                            const auto answer = b.local_description().value();
+                            a.async_set_remote_description(answer.view(), [](error_code) {});
                         });
-                });
+                    });
+            });
         });
     });
 }

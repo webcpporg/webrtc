@@ -103,8 +103,7 @@ void state_queues_and_outputs_in_the_allocator() {
         });
     });
     webcpp::test::negotiate(*first, *second, ab, ba, [](error_code ec) { BOOST_TEST(!ec); });
-    io.run_for(
-        webcpp::test::exchange_limit);  // lint-run: the peers' events come from libdatachannel
+    io.run_for(webcpp::test::exchange_limit);  // lint-run: libdatachannel posts the peers' events
     BOOST_TEST(received == std::optional<std::size_t>(7));
     const auto description = first->local_description();
     webcpp::test::require(BOOST_TEST(description.has_value()));
