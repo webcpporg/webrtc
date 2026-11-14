@@ -11,7 +11,8 @@
 //       the relay, a native answer and a native offer, three runs of native.cpp's program
 //   node run.mjs --browser <browser_peer.js>
 //       the relay and a native offer, whose answer is browser_peer.cpp's program in page.html,
-//       in headless Chromium, once in each suspension variant of its manifest
+//       in headless Chromium; then the page's offer and a native answer; both in each
+//       suspension variant of the program's manifest
 //
 // b2's driven tests pass the program they linked last: the native program, or the JSPI
 // artifact of the page's program, beside which its manifest and the Asyncify artifact lie. The
@@ -23,9 +24,12 @@
 // runs headless, through Playwright (package.json pins it), with the two switches without which
 // a peer in it cannot meet a native one on the loopback: --allow-loopback-in-peer-connection,
 // for a candidate on 127.0.0.1, and --disable-features=WebRtcHideLocalIpsWithMdns, for its host
-// candidates as addresses rather than mDNS names, which the native peer cannot resolve. Both are
-// checked on the candidates the page sent. Chromium is the one CHROME names, else, on macOS, the
-// newest full Chromium in Playwright's cache.
+// candidates as addresses rather than mDNS names, which the native peer cannot resolve. Without
+// mDNS names, Chromium lists a page's interfaces, the loopback among them, only when the page may
+// capture media, and gives it the default route's address alone otherwise (measured with
+// Chromium 156): the page's origin is granted the microphone, which starts no capture. Both
+// switches are checked on the candidates the page sent. Chromium is the one CHROME names, else,
+// on macOS, the newest full Chromium in Playwright's cache.
 //
 // What a run starts is gone when it ends, however it ends: its verdict, a failure, or SIGTERM,
 // SIGINT or SIGHUP (the bound of b2's driven test sends SIGTERM).
@@ -35,7 +39,7 @@ import {once} from 'node:events'
 import {existsSync, readdirSync, readFileSync, statSync} from 'node:fs'
 import {createServer} from 'node:http'
 import {homedir} from 'node:os'
-import {dirname, extname, join, resolve, sep} from 'node:path'
+import {dirname, extname, join, relative, resolve, sep} from 'node:path'
 import {createInterface} from 'node:readline'
 import {setTimeout as delay} from 'node:timers/promises'
 import {fileURLToPath} from 'node:url'
@@ -149,8 +153,7 @@ const sentAddresses = (lines, who) => {
         .map(line => line.slice(prefix.length).split(' ')[4])
 }
 
-// The verdict a peer printed, and the lines the exchange needs: what it received, and that the
-// native peer's candidates are on the loopback alone.
+// That a peer passed, received what it was due, and sent candidates; their addresses.
 const checkPeer = (lines, who, received) => {
     const verdict = lines.find(line => line.startsWith(`${who}: passed`) || line.startsWith(`${who}: failed`))
     assert.equal(verdict, `${who}: passed`, `${who} did not pass`)
@@ -160,6 +163,7 @@ const checkPeer = (lines, who, received) => {
     return addresses
 }
 
+// That a native peer passed, and sent candidates on the loopback alone.
 const checkNative = (lines, who, received) => {
     const addresses = checkPeer(lines, who, received)
     assert.deepEqual([...new Set(addresses)], ['127.0.0.1'],
@@ -167,7 +171,9 @@ const checkNative = (lines, who, received) => {
 }
 
 // ---- natively: two native peers through the relay ---------------------------------------------
-const native = () => (mode === '--native' ? resolve(program) : nativeProgram())
+// The native program, found once.
+let nativeFile
+const native = () => (nativeFile ??= mode === '--native' ? resolve(program) : nativeProgram())
 
 const runNative = async () => {
     console.log('interop native: the relay, a native answer and a native offer')
@@ -219,11 +225,23 @@ const findChrome = () => {
     throw new Error(`no Chromium in ${cache}; set CHROME`)
 }
 
+// The program's manifest, beside its JSPI artifact, and the directory that holds it and every
+// artifact it names, which is served: b2 may build the Asyncify artifact in a sibling directory
+// (webcpp-suspend-asyncify/ comes before the directory of a feature that sorts after it).
+const manifest = join(dirname(resolve(program)), 'browser_peer.variants.json')
+const builds = () => {
+    const artifacts = Object.values(JSON.parse(readFileSync(manifest, 'utf8')))
+        .map(artifact => resolve(dirname(manifest), artifact.script))
+    let directory = dirname(manifest)
+    while (!artifacts.every(artifact => artifact.startsWith(directory + sep))) directory = dirname(directory)
+    return directory
+}
+
 // The page, the page's program and webcpp::asio's loader, from 127.0.0.1.
 const types = {'.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript',
     '.wasm': 'application/wasm', '.json': 'application/json'}
 const serve = async () => {
-    const roots = {'/build/': dirname(resolve(program)),
+    const roots = {'/build/': builds(),
         '/loader/': join(root, 'libs/asio/include/webcpp/asio'), '/': here}
     const server = createServer((request, response) => {
         const path = decodeURIComponent(new URL(request.url, 'http://127.0.0.1').pathname)
@@ -242,6 +260,70 @@ const serve = async () => {
     return `http://127.0.0.1:${server.address().port}`
 }
 
+// The other role, and what a role receives: the offer "pong", the answer "ping".
+const other = role => (role === 'offer' ? 'answer' : 'offer')
+const due = role => (role === 'offer' ? 'pong' : 'ping')
+
+// The candidates the page's peer sent are those Chromium gathered, in order, the end included:
+// none is lost on its way through the page's backend. They hold one on 127.0.0.1, and no mDNS
+// name: the two switches took effect.
+const checkGathered = (lines, who, gathered) => {
+    const prefix = `${who}: sent the candidate `
+    const sent = lines.filter(line => line.startsWith(prefix) || line === `${who}: sent the end of its candidates`)
+        .map(line => (line.startsWith(prefix) ? line.slice(prefix.length) : null))
+    assert.deepEqual(sent, gathered, `${who} did not send the candidates Chromium gathered`)
+    const addresses = sentAddresses(lines, who)
+    assert.ok(addresses.includes('127.0.0.1'), 'the page sent no candidate on 127.0.0.1:'
+        + ` --allow-loopback-in-peer-connection had no effect (${addresses})`)
+    assert.ok(!addresses.some(address => address.endsWith('.local')), 'the page sent mDNS'
+        + ` candidates: --disable-features=WebRtcHideLocalIpsWithMdns had no effect (${addresses})`)
+}
+
+// The native peer, in `role`, meets the page's peer in the other role, in `variant`, through a
+// relay of their own; the native peer joins the relay first, so that what it says waits there.
+const meet = async (base, variant, role) => {
+    const who = `browser ${other(role)}`
+    console.log(`interop browser (${variant}): the relay, a native ${role} and the page's ${other(role)}`)
+    const {relay, port} = await startRelay()
+    const peer = start(`native ${role}`, native(), [role, port])
+    await waitFor(peer, 'connection to the relay',
+        lines => lines.includes(`native ${role}: connected to the relay`), listening)
+    const context = await left.browser.newContext()
+    try {
+        // Interfaces listed, the loopback with them (above).
+        await context.grantPermissions(['microphone'], {origin: base})
+        // Without JSPI, webcpp::asio's loader picks the Asyncify artifact.
+        if (variant === 'asyncify') await context.addInitScript({content: 'delete WebAssembly.Suspending'})
+        const page = await context.newPage()
+        const problems = []
+        page.on('pageerror', error => problems.push(`exception: ${error.message}`))
+        page.on('console', message => {
+            if (message.type() === 'error') problems.push(`console.error: ${message.text()}`)
+        })
+        const query = new URLSearchParams({role: other(role), relay: port,
+            manifest: `/build/${relative(builds(), manifest).split(sep).join('/')}`})
+        await page.goto(`${base}/page.html?${query}`)
+        await page.waitForFunction(who => window.report.error
+            || window.report.lines.some(line => line.startsWith(`${who}: passed`) || line.startsWith(`${who}: failed`)),
+        who, {timeout: exchange, polling: 100}).catch(() => {})
+        const report = await page.evaluate(() => window.report)
+        for (const line of report.lines) console.log(line)
+        assert.ok(!report.error, `the page failed: ${report.error}`)
+        assert.deepEqual(problems, [], 'Chromium reported an exception or a console.error')
+        assert.equal(report.variant, variant, `the page loaded ${report.variant}, not ${variant}`)
+        checkPeer(report.lines, who, due(other(role)))
+        checkGathered(report.lines, who, report.gathered)
+        await ended(peer, exchange)
+        checkNative(peer.lines, `native ${role}`, due(role))
+        await ended(relay, leaving)
+        console.log(`interop browser (${variant}): the native ${role} and the page's ${other(role)} passed`)
+    } finally {
+        await context.close()
+        peer.stop()
+        relay.stop()
+    }
+}
+
 const runBrowser = async () => {
     const executable = findChrome()
     console.log(`interop browser: the native program ${native()}`)
@@ -253,53 +335,16 @@ const runBrowser = async () => {
             '--disable-features=WebRtcHideLocalIpsWithMdns',
             // No request of Chromium's own leaves the machine: no host resolves but 127.0.0.1.
             '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1',
-            // Chromium's sandbox refuses to start as root, as in a container.
-            ...(process.getuid?.() === 0 ? ['--no-sandbox'] : []),
         ],
     })
     console.log(`interop browser: ${executable}, version ${left.browser.version()}`)
     for (const variant of ['jspi', 'asyncify']) {
-        console.log(`interop browser (${variant}): the relay, a native offer and the page's answer`)
-        const {relay, port} = await startRelay()
-        const offer = start('native offer', native(), ['offer', port])
-        const context = await left.browser.newContext()
-        // Without JSPI, webcpp::asio's loader picks the Asyncify artifact.
-        if (variant === 'asyncify') await context.addInitScript({content: 'delete WebAssembly.Suspending'})
-        const page = await context.newPage()
-        const problems = []
-        page.on('pageerror', error => problems.push(`exception: ${error.message}`))
-        page.on('console', message => {
-            if (message.type() === 'error') problems.push(`console.error: ${message.text()}`)
-        })
-        try {
-            const query = new URLSearchParams({manifest: '/build/browser_peer.variants.json',
-                role: 'answer', relay: port})
-            await page.goto(`${base}/page.html?${query}`)
-            const verdict = /^browser answer: (passed|failed)/
-            await page.waitForFunction(pattern => window.report.error
-                || window.report.lines.some(line => new RegExp(pattern).test(line)),
-            verdict.source, {timeout: exchange, polling: 100})
-                .catch(() => {})
-            const report = await page.evaluate(() => window.report)
-            for (const line of report.lines) console.log(line)
-            assert.ok(!report.error, `the page failed: ${report.error}`)
-            assert.deepEqual(problems, [], 'Chromium reported an exception or a console.error')
-            assert.equal(report.variant, variant, `the page loaded ${report.variant}, not ${variant}`)
-            const addresses = checkPeer(report.lines, 'browser answer', 'ping')
-            assert.ok(addresses.includes('127.0.0.1'), 'the page sent no candidate on 127.0.0.1:'
-                + ` --allow-loopback-in-peer-connection had no effect (${addresses})`)
-            assert.ok(!addresses.some(address => address.endsWith('.local')), 'the page sent mDNS'
-                + ` candidates: --disable-features=WebRtcHideLocalIpsWithMdns had no effect (${addresses})`)
-            await ended(offer, exchange)
-            checkNative(offer.lines, 'native offer', 'pong')
-            await ended(relay, leaving)
-            console.log(`interop browser (${variant}): passed`)
-        } finally {
-            await context.close()
-            offer.stop()
-            relay.stop()
-        }
+        // The lane's case: the native peer sends "ping", the page answers "pong".
+        await meet(base, variant, 'offer')
+        // And the other way: the page offers and sends "ping", the native peer answers.
+        await meet(base, variant, 'answer')
     }
+    console.log('interop browser: passed')
 }
 
 try {

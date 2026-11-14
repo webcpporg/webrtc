@@ -34,7 +34,7 @@ project : requirements -<library>/webcpp/webrtc//headers ;
 
 import webcpp ;
 
-webcpp.targets native ;
+webcpp.targets native emscripten ;
 
 webcpp.original node ;
 
@@ -51,4 +51,13 @@ webcpp.link native : native.cpp
 webcpp.drive interop_native : .//native-program : <webcpp-drive-timeout>120
   : run.mjs : --native : native ;
 
-webcpp.lane interop : interop_native : native ;
+# The page's peer, in both suspension variants (browser_peer.cpp).
+webcpp.variants browser_peer : browser_peer.cpp
+  : <library>/webcpp/webrtc//webrtc <library>/webcpp/beast//browser
+    <library>/webcpp//boost_json ;
+
+webcpp.drive interop_browser : .//browser_peer
+  : <dependency>browser_peer.variants.json <dependency>page.html <webcpp-drive-timeout>300
+  : run.mjs : --browser : emscripten ;
+
+webcpp.lane interop : interop_native interop_browser : native emscripten ;

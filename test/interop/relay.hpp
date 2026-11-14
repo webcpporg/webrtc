@@ -10,14 +10,22 @@
 // what the peers say is theirs (signalling.hpp). A frame for a peer that has not finished its
 // handshake yet waits for it; one for a peer that has left is dropped, and counted. It ends once
 // both peers have left, and has passed when both closed their WebSocket themselves.
+//
+// Its loops are coroutines, so that each is a loop: a completion handler that started the next
+// read or write would be a recursion of the call graph.
 
 #ifndef WEBCPP_TEST_WEBRTC_INTEROP_RELAY_HPP
 #define WEBCPP_TEST_WEBRTC_INTEROP_RELAY_HPP
 
+#include <webcpp/asio/as_tuple.hpp>
+#include <webcpp/asio/awaitable.hpp>
 #include <webcpp/asio/buffer.hpp>
+#include <webcpp/asio/co_spawn.hpp>
+#include <webcpp/asio/detached.hpp>
 #include <webcpp/asio/io_context.hpp>
 #include <webcpp/asio/ip/address.hpp>
 #include <webcpp/asio/ip/tcp.hpp>
+#include <webcpp/asio/use_awaitable.hpp>
 #include <webcpp/beast/core.hpp>
 #include <webcpp/beast/tcp_stream.hpp>
 #include <webcpp/beast/websocket.hpp>
@@ -63,7 +71,7 @@ public:
         if (acceptor_.listen(webcpp::asio::socket_base::max_listen_connections, ec)) {
             return ec;
         }
-        accept();
+        webcpp::asio::co_spawn(acceptor_.get_executor(), accept(), webcpp::asio::detached);
         return {};
     }
 
@@ -81,7 +89,7 @@ public:
 private:
     // One peer: its WebSocket, the frame it is reading, and what waits to be written to it.
     struct peer {
-        explicit peer(tcp::socket socket) : ws(std::move(socket)) {}
+        explicit peer(tcp::socket socket, std::size_t n) : ws(std::move(socket)), number(n) {}
 
         webcpp::beast::websocket::stream<webcpp::beast::tcp_stream> ws;
         webcpp::beast::flat_buffer frame;
@@ -98,42 +106,56 @@ private:
         static_cast<void>(std::fflush(stdout));
     }
 
-    void accept() {
-        acceptor_.async_accept([this](error_code ec, tcp::socket socket) {
+    // Accepts the two peers, then listens no more.
+    webcpp::asio::awaitable<void> accept() {
+        for (auto& joining : peers_) {
+            auto [ec, socket] = co_await acceptor_.async_accept(
+                webcpp::asio::as_tuple(webcpp::asio::use_awaitable));
             if (ec) {
                 log("accepting a peer: " + ec.message());
                 ++failed_;
-                return;
+                co_return;
             }
-            auto& joining = peers_.at(accepted_);
-            joining = std::make_unique<peer>(std::move(socket));
-            joining->number = ++accepted_;
+            joining = std::make_unique<peer>(std::move(socket), ++accepted_);
             // What the first peer said before the second connected, in its order.
             if (joining->number == 2) {
                 joining->outbox = std::move(pending_);
                 pending_.clear();
             }
-            joining->ws.async_accept(
-                [this, &joining = *joining](error_code ec) { on_accept(joining, ec); });
-            if (accepted_ != peers_.size()) {
-                accept();
-            } else if (acceptor_.close(ec)) {
-                log("closing the acceptor: " + ec.message());
-                ++failed_;
-            }
-        });
+            webcpp::asio::co_spawn(acceptor_.get_executor(), serve(*joining),
+                                   webcpp::asio::detached);
+        }
+        if (error_code ec; acceptor_.close(ec)) {
+            log("closing the acceptor: " + ec.message());
+            ++failed_;
+        }
     }
 
-    void on_accept(peer& joining, error_code ec) {
-        if (ec) {
-            leave(joining, "its handshake failed: " + ec.message(), false);
-            return;
+    // Takes a peer's WebSocket handshake, then carries each frame it sends until it leaves.
+    webcpp::asio::awaitable<void> serve(peer& from) {
+        const auto [accepted] =
+            co_await from.ws.async_accept(webcpp::asio::as_tuple(webcpp::asio::use_awaitable));
+        if (accepted) {
+            leave(from, "its handshake failed: " + accepted.message(), false);
+            co_return;
         }
-        joining.joined = true;
-        joining.ws.text(true);
-        log("peer " + std::to_string(joining.number) + " joined");
-        write_next(joining);
-        read(joining);
+        from.joined = true;
+        from.ws.text(true);
+        log("peer " + std::to_string(from.number) + " joined");
+        start_writing(from);
+        for (;;) {
+            const auto [read, size] = co_await from.ws.async_read(
+                from.frame, webcpp::asio::as_tuple(webcpp::asio::use_awaitable));
+            if (read == webcpp::beast::websocket::error::closed) {
+                leave(from, "it closed its WebSocket", true);
+                co_return;
+            }
+            if (read) {
+                leave(from, "reading from it failed: " + read.message(), false);
+                co_return;
+            }
+            carry(from, size);
+        }
     }
 
     peer* other(const peer& one) {
@@ -141,30 +163,10 @@ private:
         return candidate ? candidate.get() : nullptr;
     }
 
-    // An asynchronous loop, which misc-no-recursion reads as recursion: each step starts from the
-    // completion of the one before, which the io_context runs, never inside the call that started
-    // it.
-    // NOLINTNEXTLINE(misc-no-recursion)
-    void read(peer& from) {
-        // NOLINTNEXTLINE(misc-no-recursion)
-        from.ws.async_read(from.frame, [this, &from](error_code ec, std::size_t) {
-            if (ec == webcpp::beast::websocket::error::closed) {
-                leave(from, "it closed its WebSocket", true);
-                return;
-            }
-            if (ec) {
-                leave(from, "reading from it failed: " + ec.message(), false);
-                return;
-            }
-            carry(from);
-            read(from);
-        });
-    }
-
     // The frame `from` read goes to the other peer, or waits for it to join.
-    void carry(peer& from) {
+    void carry(peer& from, std::size_t size) {
         auto text = webcpp::beast::buffers_to_string(from.frame.data());
-        from.frame.consume(from.frame.size());
+        from.frame.consume(size);
         ++from.carried;
         peer* to = other(from);
         if (to == nullptr) {
@@ -176,29 +178,30 @@ private:
             return;
         }
         to->outbox.push_back(std::move(text));
-        if (to->joined) {
-            write_next(*to);
+        start_writing(*to);
+    }
+
+    void start_writing(peer& to) {
+        if (to.joined && !to.writing && !to.left && !to.outbox.empty()) {
+            to.writing = true;
+            webcpp::asio::co_spawn(acceptor_.get_executor(), write(to), webcpp::asio::detached);
         }
     }
 
-    // Another asynchronous loop, as read's.
-    // NOLINTNEXTLINE(misc-no-recursion)
-    void write_next(peer& to) {
-        if (to.writing || to.left || to.outbox.empty()) {
-            return;
-        }
-        to.writing = true;
-        // NOLINTNEXTLINE(misc-no-recursion)
-        auto written = [this, &to](error_code ec, std::size_t) {
-            to.writing = false;
+    // Writes what waits for `to`, in turn, until none is left.
+    webcpp::asio::awaitable<void> write(peer& to) {
+        while (!to.outbox.empty() && !to.left) {
+            const auto [written, size] =
+                co_await to.ws.async_write(webcpp::asio::buffer(to.outbox.front()),
+                                           webcpp::asio::as_tuple(webcpp::asio::use_awaitable));
             to.outbox.pop_front();
-            if (ec) {
-                leave(to, "writing to it failed: " + ec.message(), false);
-                return;
+            if (written) {
+                to.writing = false;
+                leave(to, "writing to it failed: " + written.message(), false);
+                co_return;
             }
-            write_next(to);
-        };
-        to.ws.async_write(webcpp::asio::buffer(to.outbox.front()), std::move(written));
+        }
+        to.writing = false;
     }
 
     void leave(peer& gone, const std::string& why, bool closed) {

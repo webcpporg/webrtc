@@ -24,11 +24,16 @@
 
 #include "signalling.hpp"
 
+#include <webcpp/asio/as_tuple.hpp>
+#include <webcpp/asio/awaitable.hpp>
 #include <webcpp/asio/buffer.hpp>
+#include <webcpp/asio/co_spawn.hpp>
+#include <webcpp/asio/detached.hpp>
 #include <webcpp/asio/io_context.hpp>
 #include <webcpp/asio/ip/address.hpp>
 #include <webcpp/asio/ip/tcp.hpp>
 #include <webcpp/asio/steady_timer.hpp>
+#include <webcpp/asio/use_awaitable.hpp>
 #include <webcpp/beast/core.hpp>
 #include <webcpp/beast/tcp_stream.hpp>
 #include <webcpp/beast/websocket.hpp>
@@ -152,18 +157,7 @@ public:
         } else {
             accept_channel();
         }
-        const asio::ip::tcp::endpoint relay(asio::ip::make_address_v4("127.0.0.1"), port);
-        beast::get_lowest_layer(ws_).async_connect(relay, [this, port](error_code ec) {
-            if (done_) {
-                return;
-            }
-            if (ec) {
-                fail("connecting to the relay", ec);
-                return;
-            }
-            ws_.async_handshake("127.0.0.1:" + std::to_string(port), "/",
-                                [this](error_code ec) { on_handshake(ec); });
-        });
+        asio::co_spawn(ws_.get_executor(), reach_relay(port), asio::detached);
     }
 
     /** Whether it ended with "passed". */
@@ -210,7 +204,7 @@ private:
         close_relay();
     }
 
-    // The WebSocket closes once no write is in flight, a write's completion closing it otherwise.
+    // The WebSocket closes once no write is in flight, the writer closing it otherwise.
     void close_relay() {
         if (writing_) {
             return;
@@ -223,78 +217,83 @@ private:
     }
 
     // ---- the relay --------------------------------------------------------------------------
+    // Coroutines, so that each loop is a loop: a completion handler that started the next read or
+    // write would be a recursion of the call graph, through the WebSocket's operations.
 
-    void on_handshake(error_code ec) {
+    // Connects to the relay, offers when it is the offer, then reads what the other peer says,
+    // each signal into the inbox, until the end.
+    asio::awaitable<void> reach_relay(std::uint16_t port) {
+        const asio::ip::tcp::endpoint relay(asio::ip::make_address_v4("127.0.0.1"), port);
+        const auto [connected] = co_await beast::get_lowest_layer(ws_).async_connect(
+            relay, asio::as_tuple(asio::use_awaitable));
         if (done_) {
-            return;
+            co_return;
         }
-        if (ec) {
-            fail("the WebSocket handshake with the relay", ec);
-            return;
+        if (connected) {
+            fail("connecting to the relay", connected);
+            co_return;
+        }
+        const auto [handshaken] = co_await ws_.async_handshake(
+            "127.0.0.1:" + std::to_string(port), "/", asio::as_tuple(asio::use_awaitable));
+        if (done_) {
+            co_return;
+        }
+        if (handshaken) {
+            fail("the WebSocket handshake with the relay", handshaken);
+            co_return;
         }
         ws_.text(true);
         log("connected to the relay");
-        read_signal();
         if (role_ == role::offer) {
             make_offer();
+        }
+        while (!done_) {
+            const auto [read, size] =
+                co_await ws_.async_read(frame_, asio::as_tuple(asio::use_awaitable));
+            if (done_) {
+                co_return;
+            }
+            if (read) {
+                fail("reading from the relay", read);
+                co_return;
+            }
+            const auto text = beast::buffers_to_string(frame_.data());
+            frame_.consume(size);
+            auto signal = parse_signal(text);
+            if (!signal) {
+                fail("the relay carried a signal that is no W3C dictionary: " + text);
+                co_return;
+            }
+            inbox_.push_back(std::move(*signal));
+            apply_next();
         }
     }
 
     void send_signal(std::string text) {
         outbox_.push_back(std::move(text));
         if (!writing_) {
-            write_next();
+            writing_ = true;
+            asio::co_spawn(ws_.get_executor(), write_signals(), asio::detached);
         }
     }
 
-    // An asynchronous loop, which misc-no-recursion reads as recursion: each step starts from the
-    // completion of the one before, which the io_context runs, never inside the call that started
-    // it.
-    // NOLINTNEXTLINE(misc-no-recursion)
-    void write_next() {
-        writing_ = !outbox_.empty();
-        if (!writing_) {
-            return;
-        }
-        // NOLINTNEXTLINE(misc-no-recursion)
-        ws_.async_write(asio::buffer(outbox_.front()), [this](error_code ec, std::size_t) {
+    // Writes the queued signals in turn until none is left, then closes the WebSocket if the
+    // peer ended meanwhile.
+    asio::awaitable<void> write_signals() {
+        while (!outbox_.empty() && !done_) {
+            const auto [written, size] = co_await ws_.async_write(
+                asio::buffer(outbox_.front()), asio::as_tuple(asio::use_awaitable));
             outbox_.pop_front();
-            writing_ = false;
-            if (done_) {
-                close_relay();
-                return;
+            if (written && !done_) {
+                writing_ = false;
+                fail("writing to the relay", written);
+                co_return;
             }
-            if (ec) {
-                fail("writing to the relay", ec);
-                return;
-            }
-            write_next();
-        });
-    }
-
-    // Another asynchronous loop, as write_next's.
-    // NOLINTNEXTLINE(misc-no-recursion)
-    void read_signal() {
-        // NOLINTNEXTLINE(misc-no-recursion)
-        ws_.async_read(frame_, [this](error_code ec, std::size_t) {
-            if (done_) {
-                return;
-            }
-            if (ec) {
-                fail("reading from the relay", ec);
-                return;
-            }
-            const auto text = beast::buffers_to_string(frame_.data());
-            frame_.consume(frame_.size());
-            auto signal = parse_signal(text);
-            if (!signal) {
-                fail("the relay carried a signal that is no W3C dictionary: " + text);
-                return;
-            }
-            inbox_.push_back(std::move(*signal));
-            apply_next();
-            read_signal();
-        });
+        }
+        writing_ = false;
+        if (done_) {
+            close_relay();
+        }
     }
 
     // ---- what the other peer said, applied in order -------------------------------------------
