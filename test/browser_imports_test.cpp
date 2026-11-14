@@ -351,6 +351,18 @@ void a_text_must_be_utf8() {
     BOOST_TEST(sent.isNull());
     BOOST_TEST_EQ(sink["sent"]["length"].as<int>(), 1);
     BOOST_TEST(sink["sent"][0].strictlyEquals(val::u8string("h\xc3\xa9")));
+    // A byte order mark is part of the text, and a zero byte too: both are sent.
+    const std::string marked(
+        "\xef\xbb\xbf"
+        "a\0b",
+        6);
+    const val kept =
+        browser::take(webcpp_webrtc_send(sink.as_handle(), marked.data(), marked.size(), true));
+    BOOST_TEST(kept.isNull());
+    const val last = sink["sent"][1];
+    BOOST_TEST_EQ(last["length"].as<int>(), 4);
+    BOOST_TEST_EQ(last.call<int>("charCodeAt", 0), 0xFEFF);
+    BOOST_TEST_EQ(last.call<int>("charCodeAt", 2), 0);
 }
 
 // An import that reads a value gives its default when the read throws.
@@ -373,6 +385,19 @@ void texts_and_bytes_cross() {
     std::string back;
     browser::js_copy(string, back);
     BOOST_TEST_EQ(back, text);
+    // The exact range crosses, a zero byte and a byte order mark included, at any length.
+    for (const std::size_t length : {std::size_t{4}, std::size_t{40}}) {
+        std::string marked("\xef\xbb\xbf");
+        marked.append(length, 'x');
+        marked[4] = '\0';
+        const val crossed = browser::js_string(marked);
+        BOOST_TEST_EQ(crossed["length"].as<int>(), static_cast<int>(length) + 1);
+        BOOST_TEST_EQ(crossed.call<int>("charCodeAt", 0), 0xFEFF);
+        BOOST_TEST_EQ(crossed.call<int>("charCodeAt", 2), 0);
+        std::string returned;
+        browser::js_copy(crossed, returned);
+        BOOST_TEST_EQ(returned, marked);
+    }
     std::vector<unsigned char> bytes;
     browser::js_copy(val::global("testBuffer"), bytes);
     BOOST_TEST((bytes == std::vector<unsigned char>{1, 2, 0, 255}));

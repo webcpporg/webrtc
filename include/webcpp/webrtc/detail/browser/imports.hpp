@@ -31,8 +31,8 @@
 // index of its W3C string in the order of webcpp::webrtc's enumeration of the same name, -1 for a
 // string it does not know.
 //
-// The functions use Emval and UTF8ToString, which webcpp::asio's browser runtime has Emscripten
-// link (<webcpp/asio/browser/src.hpp>, in every program on /webcpp/asio//asio).
+// The functions use Emval, which webcpp::asio's browser runtime has Emscripten link
+// (<webcpp/asio/browser/src.hpp>, in every program on /webcpp/asio//asio).
 
 // clang-format off
 // Makes an RTCPeerConnection of `configuration`, counts it in `census` and sets the handlers of
@@ -211,8 +211,9 @@ inline emscripten::EM_VAL webcpp_webrtc_send(emscripten::EM_VAL channel, const v
         const view = HEAPU8.subarray(data, data + size);
         // send and TextDecoder require data that is not shared.
         const bytes = view.buffer instanceof ArrayBuffer ? view : view.slice();
-        Emval.toValue(channel).send(text ? new TextDecoder('utf-8', {fatal: true}).decode(bytes)
-            : bytes);
+        // A byte order mark is part of the text, which ignoreBOM keeps.
+        Emval.toValue(channel).send(text
+            ? new TextDecoder('utf-8', {fatal: true, ignoreBOM: true}).decode(bytes) : bytes);
         return Emval.toHandle(null);
     } catch (error) {
         return Emval.toHandle(typeof error?.name === 'string' ? error.name : "");
@@ -372,13 +373,17 @@ inline void webcpp_webrtc_copy(emscripten::EM_VAL value, void* data, std::size_t
     }
     }), value, data, size);
 }
-// The JavaScript string of `size` bytes of UTF-8 at `data`.
+// The JavaScript string of exactly `size` bytes of UTF-8 at `data`, a zero byte and a byte order
+// mark included, which UTF8ToString would stop at and strip.
 inline emscripten::EM_VAL webcpp_webrtc_string(const char* data, std::size_t size) {
     return reinterpret_cast<emscripten::EM_VAL>(EM_ASM_PTR(({
     const data = $0 >>> 0;
     const size = $1 >>> 0;
 
-    return Emval.toHandle(UTF8ToString(data, size));
+    const view = HEAPU8.subarray(data, data + size);
+    // TextDecoder requires data that is not shared.
+    const bytes = view.buffer instanceof ArrayBuffer ? view : view.slice();
+    return Emval.toHandle(new TextDecoder('utf-8', {ignoreBOM: true}).decode(bytes));
     }), data, size));
 }
 // clang-format on
