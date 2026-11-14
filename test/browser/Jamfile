@@ -20,9 +20,9 @@ webcpp.original node ;
 # variants with requirements, and its twin name_no_exceptions, built with
 # exceptions off; each is driven by run.mjs, which waits for the line
 # expected. The drive's 240 s hold run.mjs's own bounds: Chrome's start and
-# the control, about 25 s, then 60 s for each of the two variants. The drive takes the program's requirements too: they are
-# propagated to its manifest, which is then written beside the jspi
-# artifact, where run.mjs reads it.
+# the control, about 25 s, then 60 s for each of the two variants. The drive
+# takes the program's requirements too: they are propagated to its manifest,
+# which is then written beside the jspi artifact, where run.mjs reads it.
 local rule program ( name : source : expected : requirements * )
 {
     for local twin in "" _no_exceptions
