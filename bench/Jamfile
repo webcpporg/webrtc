@@ -1,0 +1,41 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+#
+# webrtc's receive benchmark (receive_bench.cpp, tasks.md 1.11): what reading
+# one message out of libdatachannel's queue costs through its C API, which
+# the native backend uses, against its C++ API's receive(). Every target here
+# is explicit: no default build and no lane runs them.
+#
+#   b2 threading=multi libs/webrtc/bench//results   measures, in release
+#
+# The library's lanes run the smoke pass as the test bench of test/Jamfile.
+
+project
+  : requirements
+      <library>/webcpp/webrtc//webrtc
+      <threading>multi
+      # libdatachannel's C++ API, the comparison, throws.
+      <exception-handling>on
+  ;
+
+import notfile ;
+import webcpp ;
+
+webcpp.targets native ;
+
+exe receive : receive_bench.cpp ;
+explicit receive ;
+
+# Runs the release program and prints what it measured. Always run again: a
+# measurement is never up to date.
+notfile results : @measure : receive/<variant>release ;
+always results ;
+explicit results ;
+
+actions measure
+{
+    "$(>)"
+}

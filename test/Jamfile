@@ -51,3 +51,11 @@ webcpp.run lifetime : lifetime_test.cpp
 # The measurement of tasks.md 1.10: a never-read channel past 1,024 messages
 # and the connection's other channels.
 webcpp.run stall : stall_test.cpp : <library>/webcpp/webrtc//webrtc <threading>multi : native ;
+
+# The receive benchmark's smoke pass (bench/receive_bench.cpp): a few rounds
+# of each path, each message checked, so that the lanes keep the measurement
+# building and right. Its comparison uses libdatachannel's C++ API, which
+# throws: it alone needs exceptions.
+webcpp.run bench : ../bench/receive_bench.cpp
+  : <define>WEBCPP_BENCH_SMOKE <library>/webcpp/webrtc//webrtc <threading>multi
+    <exception-handling>on : native ;
