@@ -95,10 +95,10 @@ public:
         webcpp::asio::cancellation_type::terminal;
 
     /** Makes the state of a connection not yet made in the browser. */
-    connection_state(runtime_slot slot, const Executor& executor, const options& opts,
+    connection_state(runtime_slot slot, Executor executor, const options& opts,
                      const Allocator& allocator)
         : slot_(std::move(slot)),
-          executor_(executor),
+          executor_(std::move(executor)),
           allocator_(allocator),
           options_(opts),
           candidates_(opts.max_queued_candidates, allocator),
@@ -136,9 +136,9 @@ public:
         if (!config.bind_address.empty() && !ignore_unsupported) {
             return webcpp::asio::error::operation_not_supported;
         }
-        emscripten::val servers = emscripten::val::array();
+        const emscripten::val servers = emscripten::val::array();
         for (const ice_server& server : config.ice_servers) {
-            emscripten::val urls = emscripten::val::array();
+            const emscripten::val urls = emscripten::val::array();
             for (const std::string_view url : server.urls) {
                 urls.call<void>("push", js_string(url));
             }
@@ -532,8 +532,10 @@ private:
                     found->op->fail(ok ? make_error_code(error::operation_error)
                                        : error_of(event["name"]));
                 } else {
-                    session_description description{static_cast<sdp_type>(type),
-                                                    string_type(text_allocator())};
+                    session_description description{
+                        static_cast<sdp_type>(type),
+                        string_type(text_allocator()),
+                    };
                     js_copy(event["sdp"], description.sdp);
                     found->op->complete({}, std::move(description));
                 }
@@ -566,7 +568,7 @@ private:
 
     template <class List>
     static void fail_all(List& list, error_code ec) {
-        for (auto& entry : list) {
+        for (const auto& entry : list) {
             if (entry.op != nullptr) {
                 entry.op->fail(ec);
             }
@@ -576,7 +578,7 @@ private:
 
     template <class List>
     static void discard_all(List& list) noexcept {
-        for (auto& entry : list) {
+        for (const auto& entry : list) {
             if (entry.op != nullptr) {
                 entry.op->discard();
             }

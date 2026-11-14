@@ -99,9 +99,9 @@ EM_JS(void, test_install_objects, (), {
 
 namespace asio = webcpp::asio;
 namespace browser = webcpp::webrtc::detail::browser;
+using boost::system::error_code;
 using emscripten::val;
 using webcpp::webrtc::error;
-using error_code = boost::system::error_code;
 
 namespace {
 
@@ -219,7 +219,11 @@ void make_and_detach() {
     BOOST_TEST(made["error"].isUndefined());
     BOOST_TEST_EQ(browser::census_held(), before + 1);
     const std::array<const char*, 4> handlers = {
-        "onconnectionstatechange", "oniceconnectionstatechange", "onicecandidate", "ondatachannel"};
+        "onconnectionstatechange",
+        "oniceconnectionstatechange",
+        "onicecandidate",
+        "ondatachannel",
+    };
     for (const char* handler : handlers) {
         BOOST_TEST(pc[handler].typeOf().strictlyEquals(val("function")));
     }
@@ -231,10 +235,23 @@ void make_and_detach() {
     bridge.remove(key);
 }
 
+// One rejection the bridge delivered, of the `failures` the test started, `seen` marking it: three
+// imports a connection, two connections a name, in the order of names.
+void check_rejection(const val& event, std::size_t failures, std::vector<bool>& seen) {
+    BOOST_TEST_EQ(browser::kind_of(event), static_cast<int>(browser::event_kind::settled));
+    BOOST_TEST(!event["ok"].as<bool>());
+    const auto which = static_cast<std::size_t>(event["id"].as<double>());
+    if (!BOOST_TEST(which >= 1 && which <= failures)) {
+        return;
+    }
+    seen.at(which) = true;
+    BOOST_TEST(is_name(event["name"], names.at((which - 1) / 6)));
+    BOOST_TEST_EQ(event["local"].as<bool>(), (which - 1) % 3 == 0);
+}
+
 // The three imports that follow a promise deliver the name of a synchronous exception and of a
-// rejection alike, later; a promise that resolves delivers its outcome, a local description its
-// type and SDP.
-void promises_deliver_their_settlement() {
+// rejection alike, later, and never during their call.
+void rejections_arrive_by_name() {
     asio::io_context io;
     recorder r(io);
     auto& bridge = asio::use_service<asio::browser::bridge>(io);
@@ -259,23 +276,21 @@ void promises_deliver_their_settlement() {
     BOOST_TEST_EQ(r.reentered, 0);
     std::vector<bool> seen(failures + 1, false);
     for (const val& event : r.events) {
-        BOOST_TEST_EQ(browser::kind_of(event), static_cast<int>(browser::event_kind::settled));
-        BOOST_TEST(!event["ok"].as<bool>());
-        const auto which = static_cast<std::size_t>(event["id"].as<double>());
-        if (!BOOST_TEST(which >= 1 && which <= failures)) {
-            continue;
-        }
-        seen.at(which) = true;
-        // Three imports a connection, two connections a name, in the order of names.
-        const char* name = names.at((which - 1) / 6);
-        BOOST_TEST(is_name(event["name"], name));
-        BOOST_TEST_EQ(event["local"].as<bool>(), (which - 1) % 3 == 0);
+        check_rejection(event, failures, seen);
     }
     for (std::size_t which = 1; which <= failures; ++which) {
         BOOST_TEST(seen.at(which));
     }
+    bridge.remove(key);
+}
 
-    r.events.clear();
+// A promise that resolves delivers its outcome, a local description its type and SDP, later.
+void resolutions_deliver_their_outcome() {
+    asio::io_context io;
+    recorder r(io);
+    auto& bridge = asio::use_service<asio::browser::bridge>(io);
+    const std::uint64_t key = bridge.add(r);
+    const val callback = bridge.function(key);
     const val pc = val::global("resolvingConnection");
     r.inside = true;
     webcpp_webrtc_set_local(pc.as_handle(), callback.as_handle(), 101);
@@ -369,7 +384,8 @@ int main() {
     test_install_objects();
     names_become_errors();
     make_and_detach();
-    promises_deliver_their_settlement();
+    rejections_arrive_by_name();
+    resolutions_deliver_their_outcome();
     returning_imports_report_names();
     a_text_must_be_utf8();
     reads_give_their_default();
