@@ -14,10 +14,10 @@
 #include <webcpp/webrtc/types.hpp>
 
 #ifdef WEBCPP_TARGET_EMSCRIPTEN
-#error "webcpp::webrtc: the browser implementation is increment 2 of reference/plan.md"
-#endif
-
+#include <webcpp/webrtc/detail/browser/channel.hpp>
+#else
 #include <webcpp/webrtc/detail/native/channel.hpp>
+#endif
 #include <webcpp/webrtc/detail/operation.hpp>
 
 #include <webcpp/asio/any_io_executor.hpp>  // lint-world: the default executor
@@ -36,20 +36,32 @@
 #include <utility>
 #include <vector>
 
+namespace webcpp::webrtc::detail {
+struct channel_access;
+}  // namespace webcpp::webrtc::detail
+
+// In the browser the classes live in an inline namespace named after the unsupported policy, so
+// that translation units that disagree on it name different types and fail to link
+// (design.md, D14); natively, where every setting is honoured, they do not.
+// NOLINTNEXTLINE(modernize-concat-nested-namespaces): the policy selects an inline namespace
 namespace webcpp::webrtc {
+#ifdef WEBCPP_TARGET_EMSCRIPTEN
+#ifdef WEBCPP_WEBRTC_UNSUPPORTED_IGNORE
+inline namespace unsupported_ignore {
+#else
+inline namespace unsupported_error {
+#endif
+#endif
 
 template <class Executor, class Allocator>
 class basic_peer_connection;
-
-namespace detail {
-struct channel_access;
-}  // namespace detail
 
 /**
  A data channel, the W3C's `RTCDataChannel`, whose events are operations the caller re-arms.
 
  Messages are kept from the channel's creation until `async_receive` reads them: natively in
- libdatachannel's own bounded queue, which slows the peer when it is full. A channel is made by
+ libdatachannel's own bounded queue, which slows the peer when it is full; in the browser in a
+ queue of the object's allocator bounded by `options::max_received_bytes`. A channel is made by
  its connection's `create_data_channel` or `async_accept_data_channel`; it is movable, not
  copyable, and its executor's context outlives it.
 
@@ -59,7 +71,11 @@ struct channel_access;
 template <class Executor = webcpp::asio::any_io_executor,
           class Allocator = std::allocator<std::byte>>
 class basic_data_channel {
+#ifdef WEBCPP_TARGET_EMSCRIPTEN
+    using state_type = detail::browser::channel_state<Executor, Allocator>;
+#else
     using state_type = detail::native::channel_state<Executor, Allocator>;
+#endif
 
 public:
     /** The executor its handlers run on. */
@@ -343,7 +359,15 @@ private:
     std::shared_ptr<state_type> state_;
 };
 
-namespace detail {
+/** A data channel on Asio's type-erased executor, in the standard allocator. */
+using data_channel = basic_data_channel<>;
+
+#ifdef WEBCPP_TARGET_EMSCRIPTEN
+}  // namespace unsupported_error or unsupported_ignore
+#endif
+}  // namespace webcpp::webrtc
+
+namespace webcpp::webrtc::detail {
 
 /** The library's access to a channel's construction. */
 struct channel_access {
@@ -354,11 +378,6 @@ struct channel_access {
     }
 };
 
-}  // namespace detail
-
-/** A data channel on Asio's type-erased executor, in the standard allocator. */
-using data_channel = basic_data_channel<>;
-
-}  // namespace webcpp::webrtc
+}  // namespace webcpp::webrtc::detail
 
 #endif  // WEBCPP_WEBRTC_DATA_CHANNEL_HPP

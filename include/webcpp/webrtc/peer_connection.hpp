@@ -16,10 +16,10 @@
 #include <webcpp/webrtc/types.hpp>
 
 #ifdef WEBCPP_TARGET_EMSCRIPTEN
-#error "webcpp::webrtc: the browser implementation is increment 2 of reference/plan.md"
-#endif
-
+#include <webcpp/webrtc/detail/browser/connection.hpp>
+#else
 #include <webcpp/webrtc/detail/native/connection.hpp>
+#endif
 #include <webcpp/webrtc/detail/operation.hpp>
 
 #include <webcpp/asio/any_io_executor.hpp>  // lint-world: the default executor
@@ -29,13 +29,25 @@
 #include <boost/system/result.hpp>
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string_view>
 #include <tuple>
 #include <utility>
 
+// In the browser the classes live in an inline namespace named after the unsupported policy, so
+// that translation units that disagree on it name different types and fail to link
+// (design.md, D14); natively, where every setting is honoured, they do not.
+// NOLINTNEXTLINE(modernize-concat-nested-namespaces): the policy selects an inline namespace
 namespace webcpp::webrtc {
+#ifdef WEBCPP_TARGET_EMSCRIPTEN
+#ifdef WEBCPP_WEBRTC_UNSUPPORTED_IGNORE
+inline namespace unsupported_ignore {
+#else
+inline namespace unsupported_error {
+#endif
+#endif
 
 /**
  A peer connection, the W3C's `RTCPeerConnection`, whose operations follow Asio's model and whose
@@ -51,7 +63,11 @@ namespace webcpp::webrtc {
 template <class Executor = webcpp::asio::any_io_executor,
           class Allocator = std::allocator<std::byte>>
 class basic_peer_connection {
+#ifdef WEBCPP_TARGET_EMSCRIPTEN
+    using state_type = detail::browser::connection_state<Executor, Allocator>;
+#else
     using state_type = detail::native::connection_state<Executor, Allocator>;
+#endif
     using string_type = detail::string<Allocator>;
 
 public:
@@ -205,13 +221,16 @@ public:
         }
         return webcpp::asio::async_initiate<CompletionToken, void(boost::system::error_code)>(
             [](auto handler, const std::shared_ptr<state_type>& state, const string_type& text,
-               const std::optional<string_type>& media) {
-                auto& op = detail::make_operation(std::move(handler), state->get_executor(),
-                                                  std::tuple<>{}, detail::wait_cancellation);
-                state->add_ice_candidate(text, media, op);
+               const std::optional<string_type>& media, std::optional<std::uint16_t> index,
+               const string_type& ufrag) {
+                auto& op =
+                    detail::make_operation(std::move(handler), state->get_executor(),
+                                           std::tuple<>{}, state_type::candidate_cancellation);
+                state->add_ice_candidate(text, media, index, ufrag, op);
             },
             token, state_, string_type(candidate.candidate, text_allocator(*state_)),
-            std::move(mid));
+            std::move(mid), candidate.sdp_m_line_index,
+            string_type(candidate.username_fragment, text_allocator(*state_)));
     }
 
     /**
@@ -385,6 +404,9 @@ private:
 /** A peer connection on Asio's type-erased executor, in the standard allocator. */
 using peer_connection = basic_peer_connection<>;
 
+#ifdef WEBCPP_TARGET_EMSCRIPTEN
+}  // namespace unsupported_error or unsupported_ignore
+#endif
 }  // namespace webcpp::webrtc
 
 #endif  // WEBCPP_WEBRTC_PEER_CONNECTION_HPP
