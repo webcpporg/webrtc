@@ -75,8 +75,9 @@ int run_peer(interop::role role, std::uint16_t port) {
     auto pc = webrtc::peer_connection::make(rt, io.get_executor(), config);
     if (!pc) {
         const auto name = interop::name_of(role);
+        const auto why = pc.error().message();
         std::printf("native %.*s: failed: make: %s\n", static_cast<int>(name.size()), name.data(),
-                    pc.error().message().c_str());
+                    why.c_str());
         return 1;
     }
     interop::peer peer(io, std::move(*pc), role, "native", peer_bound);

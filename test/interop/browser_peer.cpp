@@ -76,8 +76,9 @@ int main(int argc, char** argv) {
     auto pc = webrtc::peer_connection::make(rt, io.get_executor(), config);
     if (!pc) {
         const auto name = interop::name_of(*role);
+        const auto why = pc.error().message();
         std::printf("browser %.*s: failed: make: %s\n", static_cast<int>(name.size()), name.data(),
-                    pc.error().message().c_str());
+                    why.c_str());
         return 1;
     }
     interop::peer peer(io, std::move(*pc), *role, "browser", peer_bound);
