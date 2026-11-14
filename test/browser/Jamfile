@@ -19,7 +19,8 @@ webcpp.original node ;
 # A program of the lane, name, built from source in both suspension
 # variants with requirements, and its twin name_no_exceptions, built with
 # exceptions off; each is driven by run.mjs, which waits for the line
-# expected. The drive takes the program's requirements too: they are
+# expected. The drive's 240 s hold run.mjs's own bounds: Chrome's start and
+# the control, about 25 s, then 60 s for each of the two variants. The drive takes the program's requirements too: they are
 # propagated to its manifest, which is then written beside the jspi
 # artifact, where run.mjs reads it.
 local rule program ( name : source : expected : requirements * )
@@ -34,7 +35,7 @@ local rule program ( name : source : expected : requirements * )
         webcpp.variants $(name)$(twin) : $(source)
           : <library>/webcpp/webrtc//webrtc $(built) ;
         webcpp.drive run_$(name)$(twin) : .//$(name)$(twin)
-          : <dependency>$(name)$(twin).variants.json <webcpp-drive-timeout>120
+          : <dependency>$(name)$(twin).variants.json <webcpp-drive-timeout>240
             $(built)
           : run.mjs : --program $(name)$(twin) --expected $(expected) ;
         .drives += run_$(name)$(twin) ;

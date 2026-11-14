@@ -303,18 +303,19 @@ void the_buffered_amount_wait() {
 
 // The peer closes its channel: what reached the page before, unread, is still delivered after the
 // close, then the reading ends with error::closed; both close waits complete without an error, and
-// a send on a closed channel is refused with invalid_state. The peer closes once the messages
-// reached the page: a browser discards a message that reaches a channel no longer open (the W3C's
-// "receiving messages"), and Chrome 156 does so with messages sent just before a close made at
-// once, measured with plain RTCDataChannel objects; 50 ms later they arrive first.
+// a send on a closed channel is refused with invalid_state. The peer closes once the page's own
+// listener counted both messages: a browser discards a message that reaches a channel no longer
+// open (the W3C's "receiving messages"), and Chrome 156 does so with messages sent just before a
+// close made at once, measured with plain RTCDataChannel objects.
 void the_peer_closes_its_channel() {
     page_pair p;
     std::optional<webrtc::data_channel> ca;
     std::optional<webrtc::data_channel> cb;
-    asio::steady_timer later(p.io);  // lint-world: lets the messages reach the peer's page
+    asio::steady_timer later(p.io);  // lint-world: polls until the messages reached the page
     reader got;
     std::optional<error_code> closed_here;
     std::optional<error_code> closed_there;
+    const int before = webcpp::test::arrivals();
     const auto all = after(2, [&] {
         BOOST_TEST(ca->send_text("late") == webrtc::error::invalid_state);
         BOOST_TEST(cb->send_text("late") == webrtc::error::invalid_state);
@@ -326,8 +327,7 @@ void the_peer_closes_its_channel() {
         cb.emplace(std::move(b));
         BOOST_TEST(!ca->send_text("one"));
         BOOST_TEST(!ca->send_text("two"));
-        later.expires_after(unread);
-        later.async_wait([&](error_code) {
+        webcpp::test::when_arrived(later, before + 2, [&] {
             ca->async_wait_close([&](error_code ec) {
                 closed_here = ec;
                 all();
@@ -346,6 +346,32 @@ void the_peer_closes_its_channel() {
     BOOST_TEST(closed_here && !*closed_here);
     BOOST_TEST(closed_there && !*closed_there);
     BOOST_TEST(cb->ready_state() == webrtc::data_channel_state::closed);
+}
+
+// A text crosses whole between two browser peers: a zero byte and a byte order mark are part of
+// it, where natively a text holding a zero cannot be sent (the table of differences).
+void a_text_holding_a_zero_and_a_mark() {
+    page_pair p;
+    std::optional<webrtc::data_channel> ca;
+    std::optional<webrtc::data_channel> cb;
+    reader got;
+    const std::string zero("a\0b", 3);
+    const std::string marked(
+        "\xef\xbb\xbf"
+        "abc");
+    webcpp::test::open_channel(p, "texts", [&](webrtc::data_channel a, webrtc::data_channel b) {
+        ca.emplace(std::move(a));
+        cb.emplace(std::move(b));
+        BOOST_TEST(!ca->send_text(zero));
+        BOOST_TEST(!ca->send_text(marked));
+        read_messages(*cb, got, 2, [&] {
+            p.a->close();
+            p.b->close();
+        });
+    });
+    p.run();
+    read_exactly(got, {zero, marked});
+    BOOST_TEST((got.texts == std::vector<bool>{true, true}));
 }
 
 // Destroying a channel completes its pending operations with operation_aborted, once each, and
@@ -513,11 +539,13 @@ void a_channel_past_the_backlog() {
 }  // namespace
 
 int main() {
+    webcpp::test::count_arrivals();
     unread_messages_past_the_budget();
     a_received_message_past_the_size();
     refused_sends_leave_it_open();
     the_buffered_amount_wait();
     the_peer_closes_its_channel();
+    a_text_holding_a_zero_and_a_mark();
     a_channel_destroyed();
     closed_before_it_opened();
     accepted_after_its_messages();

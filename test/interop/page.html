@@ -23,13 +23,17 @@ window.report, with the variant it loaded and any error.
 import {load} from '/loader/webcpp-asio-loader.mjs'
 const report = (window.report = {lines: [], variant: null, error: null, gathered: []})
 // Every candidate Chromium gathers, the end as null, as each RTCPeerConnection reports it to any
-// listener: run.mjs compares them with those the page's peer sent.
+// listener: run.mjs compares them with those the page's peer sent. An empty candidate ends one
+// generation's candidates, which webrtc does not deliver (it delivers the end of gathering once,
+// the null), so it is not recorded either.
 const PeerConnection = window.RTCPeerConnection
 window.RTCPeerConnection = class extends PeerConnection {
     constructor(...args) {
         super(...args)
-        this.addEventListener('icecandidate', event =>
-            report.gathered.push(event.candidate ? event.candidate.candidate : null))
+        this.addEventListener('icecandidate', event => {
+            if (event.candidate && !event.candidate.candidate) return
+            report.gathered.push(event.candidate ? event.candidate.candidate : null)
+        })
     }
 }
 try {

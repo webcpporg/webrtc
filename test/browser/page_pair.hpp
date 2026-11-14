@@ -18,10 +18,13 @@
 #include "../pair.hpp"
 #include "../require.hpp"
 
-#include <webcpp/asio/io_context.hpp>  // lint-world: the tests' event loop
+#include <webcpp/asio/io_context.hpp>    // lint-world: the tests' event loop
+#include <webcpp/asio/steady_timer.hpp>  // lint-world: polls the page's count of arrivals
 
+#include <emscripten/em_asm.h>
 #include <boost/core/lightweight_test.hpp>
 
+#include <chrono>
 #include <cstdio>
 #include <functional>
 #include <memory>
@@ -122,6 +125,52 @@ inline void open_channel(page_pair& p, std::string_view label,
         });
     });
     p.negotiate([](webrtc::detail::error_code ec) { BOOST_TEST(!ec); });
+}
+
+/**
+ Counts, in the page, every message the browser delivers to a channel a peer accepted, through a
+ listener of the page's own beside webrtc's: a test reads the count to know that messages it has
+ not read yet arrived. Installed before the page makes its first peer connection, once.
+*/
+inline void count_arrivals() {
+    // clang-format off
+    EM_ASM(({
+        if (globalThis.webcppArrivals !== undefined) return;
+        globalThis.webcppArrivals = 0;
+        const Base = RTCPeerConnection;
+        globalThis.RTCPeerConnection = class extends Base {
+            constructor(configuration) {
+                super(configuration);
+                this.addEventListener('datachannel', event => {
+                    event.channel.addEventListener('message', () => { ++globalThis.webcppArrivals; });
+                });
+            }
+        };
+    }));
+// clang-format on
+}
+
+/** The messages count_arrivals counted so far. */
+inline int arrivals() {
+    return EM_ASM_INT({ return globalThis.webcppArrivals | 0; });
+}
+
+/**
+ Calls `then` once count_arrivals counted `count` messages, polling every 10 ms with `timer`,
+ which outlives the wait; a run's limit ends a wait for messages that never come.
+*/
+inline void when_arrived(webcpp::asio::steady_timer& timer, int count, std::function<void()> then) {
+    if (arrivals() >= count) {
+        then();
+        return;
+    }
+    timer.expires_after(std::chrono::milliseconds(10));
+    timer.async_wait(
+        [&timer, count, then = std::move(then)](webrtc::detail::error_code ec) mutable {
+            if (!ec) {
+                when_arrived(timer, count, std::move(then));
+            }
+        });
 }
 
 /**

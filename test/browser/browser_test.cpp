@@ -218,24 +218,24 @@ void a_candidate_carries_its_line_and_fragment() {
     BOOST_TEST(local->sdp.find("a=ice-ufrag:" + first->username_fragment) != std::string::npos);
 }
 
-// Messages are kept from the channel's creation: three sent before the first receive arrive in
-// order.
+// Messages are kept from the channel's creation: three sent, which the page's own listener counts
+// as they reach it, are all read in order by receives started only after the last one arrived.
 void received_before_the_first_receive() {
     page_pair p;
     std::optional<webrtc::data_channel> cb;
     std::optional<webrtc::data_channel> ca;
     std::string text;
     auto buffer = asio::dynamic_buffer(text);
-    asio::steady_timer later(p.io);  // lint-world: lets the messages arrive unread
+    asio::steady_timer later(p.io);  // lint-world: polls until the messages arrived unread
     std::vector<std::string> got;
+    const int before = webcpp::test::arrivals();
     webcpp::test::open_channel(p, "early", [&](webrtc::data_channel a, webrtc::data_channel b) {
         ca.emplace(std::move(a));
         cb.emplace(std::move(b));
         BOOST_TEST(!ca->send_text("one"));
         BOOST_TEST(!ca->send_text("two"));
         BOOST_TEST(!ca->send_text("three"));
-        later.expires_after(std::chrono::milliseconds(300));
-        later.async_wait([&](error_code) {
+        webcpp::test::when_arrived(later, before + 3, [&] {
             const auto next = std::make_shared<std::function<void()>>();
             *next = [&, next] {
                 cb->async_receive(buffer, [&, next](error_code ec, std::size_t n, bool) {
@@ -621,6 +621,7 @@ void run_returns_once_closed() {
 }  // namespace
 
 int main() {
+    webcpp::test::count_arrivals();
     a_full_exchange();
     a_candidate_carries_its_line_and_fragment();
     received_before_the_first_receive();
