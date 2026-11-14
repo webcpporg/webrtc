@@ -85,6 +85,7 @@ public:
     [[nodiscard]] std::size_t peer_connections() const noexcept {
         return detail::browser::census_held();
     }
+
     // NOLINTEND(readability-convert-member-functions-to-static)
 
 private:
@@ -180,7 +181,10 @@ public:
         rtcPreload();
     }
 
-    /** Unloads libdatachannel's global resources, waiting until its threads have stopped. */
+    /**
+     Unloads libdatachannel's global resources, waiting until its threads have stopped, for at most
+     ten seconds, after which libdatachannel gives up.
+    */
     ~runtime() { rtcCleanup(); }
 
     /** Not copyable: it is the process's state, held once. */

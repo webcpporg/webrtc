@@ -159,15 +159,13 @@ public:
           max_message_size_(opts.max_message_size),
           max_buffered_amount_(opts.max_buffered_amount) {}
 
-    /** Not copyable: it is shared by its channel and libdatachannel's events, by its address. */
+    /** Not copyable: its channel and libdatachannel's events share it. */
     channel_state(const channel_state&) = delete;
-    /** Not copy-assignable: it is shared by its channel and libdatachannel's events, by its
-     * address. */
+    /** Not copy-assignable: its channel and libdatachannel's events share it. */
     channel_state& operator=(const channel_state&) = delete;
-    /** Not movable: it is shared by its channel and libdatachannel's events, by its address. */
+    /** Not movable: its channel and libdatachannel's events share it. */
     channel_state(channel_state&&) = delete;
-    /** Not move-assignable: it is shared by its channel and libdatachannel's events, by its
-     * address. */
+    /** Not move-assignable: its channel and libdatachannel's events share it. */
     channel_state& operator=(channel_state&&) = delete;
 
     /** Deletes libdatachannel's channel, aborting what waits. */

@@ -73,7 +73,7 @@ public:
 
 protected:
     pending() = default;
-    /** Destroys its handler, its work guards and its fallback values. */
+    /** Destroys it; the derived operation destroys its handler and what it holds. */
     ~pending() = default;
 
 private:
