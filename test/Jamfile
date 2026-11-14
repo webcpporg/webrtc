@@ -64,3 +64,12 @@ webcpp.run stall : stall_test.cpp : <library>/webcpp/webrtc//webrtc <threading>m
 webcpp.run bench : ../bench/receive_bench.cpp
   : <define>WEBCPP_BENCH_SMOKE <library>/webcpp/webrtc//webrtc <threading>multi
     <exception-handling>on : native ;
+
+# The browser's imports, under node, which has no WebRTC: what each import
+# reports when the object it calls throws, and that none enters C++ during
+# its call. Every browser test runs in the suspension variant b2 is asked for
+# (webcpp-suspend=jspi or asyncify), with exceptions and without.
+webcpp.run browser_imports : browser_imports_test.cpp : <library>/webcpp/webrtc//webrtc
+  : emscripten ;
+webcpp.run browser_imports_no_exceptions : browser_imports_test.cpp
+  : <library>/webcpp/webrtc//webrtc <exception-handling>off : emscripten ;
