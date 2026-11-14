@@ -13,15 +13,52 @@ import webcpp ;
 webcpp.targets emscripten ;
 webcpp.original node ;
 
-webcpp.variants harness_probe : harness_probe.cpp : <library>/webcpp/webrtc//webrtc ;
-webcpp.drive browser_harness : .//harness_probe
-  : <dependency>harness_probe.variants.json <webcpp-drive-timeout>120
-  : run.mjs : --program harness_probe --expected "browser harness: ok" ;
+# The drives of the lane, which program adds to.
+.drives = ;
 
-webcpp.variants harness_probe_no_exceptions : harness_probe.cpp
-  : <library>/webcpp/webrtc//webrtc <exception-handling>off ;
-webcpp.drive browser_harness_no_exceptions : .//harness_probe_no_exceptions
-  : <dependency>harness_probe_no_exceptions.variants.json <webcpp-drive-timeout>120
-  : run.mjs : --program harness_probe_no_exceptions --expected "browser harness: ok" ;
+# A program of the lane, name, built from source in both suspension
+# variants with requirements, and its twin name_no_exceptions, built with
+# exceptions off; each is driven by run.mjs, which waits for the line
+# expected. The drive takes the program's requirements too: they are
+# propagated to its manifest, which is then written beside the jspi
+# artifact, where run.mjs reads it.
+local rule program ( name : source : expected : requirements * )
+{
+    for local twin in "" _no_exceptions
+    {
+        local built = $(requirements) ;
+        if $(twin)
+        {
+            built += <exception-handling>off ;
+        }
+        webcpp.variants $(name)$(twin) : $(source)
+          : <library>/webcpp/webrtc//webrtc $(built) ;
+        webcpp.drive run_$(name)$(twin) : .//$(name)$(twin)
+          : <dependency>$(name)$(twin).variants.json <webcpp-drive-timeout>120
+            $(built)
+          : run.mjs : --program $(name)$(twin) --expected $(expected) ;
+        .drives += run_$(name)$(twin) ;
+    }
+}
 
-webcpp.lane browser : browser_harness browser_harness_no_exceptions : emscripten ;
+program harness_probe : harness_probe.cpp : "browser harness: ok" ;
+
+# Two peers in one page: every case of ../native_test.cpp a page can run
+# (reference/plan.md, Task 2.3).
+program browser_test : browser_test.cpp : "browser webrtc: ok" ;
+
+# The browser's data channel (Task 2.4).
+program browser_channel_test : browser_channel_test.cpp
+  : "browser webrtc channels: ok" ;
+
+# A pair over a polymorphic allocator on a counting resource.
+program browser_allocation_test : browser_allocation_test.cpp
+  : "browser webrtc allocation: ok" ;
+
+# bind_address under each policy for what a target cannot honour (Task 2.5).
+program browser_policy_error_test : browser_policy_test.cpp
+  : "browser bind_address refused: ok" : <webcpp-webrtc-unsupported>error ;
+program browser_policy_ignore_test : browser_policy_test.cpp
+  : "browser bind_address ignored: ok" : <webcpp-webrtc-unsupported>ignore ;
+
+webcpp.lane browser : $(.drives) : emscripten ;

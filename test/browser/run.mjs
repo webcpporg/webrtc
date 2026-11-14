@@ -33,7 +33,7 @@ import {once} from 'node:events'
 import {existsSync, mkdtempSync, readFileSync, readdirSync, rmSync} from 'node:fs'
 import {createServer} from 'node:http'
 import {homedir, tmpdir} from 'node:os'
-import {dirname, extname, join, relative, resolve, sep} from 'node:path'
+import {dirname, extname, join, resolve, sep} from 'node:path'
 import {setTimeout as delay} from 'node:timers/promises'
 import {fileURLToPath} from 'node:url'
 
@@ -54,16 +54,13 @@ assert.ok(Number.isFinite(timeout) && timeout > 0, '--timeout takes a number of 
 const here = dirname(fileURLToPath(import.meta.url))
 const artifact = resolve(args[0])
 
-// The manifest of webcpp.variants is written beside the jspi artifact of a program built as the
-// build asks; one built with <exception-handling>off is in a directory of its own, and its
-// manifest stays where the build would have put it, which the path names without that directory.
-const adjacent = join(dirname(artifact), `${program}.variants.json`)
-const manifest = existsSync(adjacent) ? adjacent
-    : join(dirname(artifact).replace(`${sep}exception-handling-off`, ''), `${program}.variants.json`)
-assert.ok(existsSync(manifest), `no manifest ${manifest} for ${artifact}`)
-let build = dirname(artifact)
-while (!manifest.startsWith(build + sep) && dirname(build) !== build) build = dirname(build)
-const manifestUrl = `/build/${relative(build, manifest).split(sep).join('/')}`
+// The manifest of webcpp.variants is beside the jspi artifact, since the Jamfile gives each drive
+// its program's requirements, and the asyncify artifact is below it.
+const build = dirname(artifact)
+const manifest = join(build, `${program}.variants.json`)
+assert.ok(existsSync(manifest), `no manifest ${manifest} beside ${artifact}: give the drive `
+    + 'the requirements of its program, which are propagated to the manifest')
+const manifestUrl = `/build/${program}.variants.json`
 
 const findChrome = () => {
     if (process.env.CHROME) return process.env.CHROME
