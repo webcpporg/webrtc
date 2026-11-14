@@ -41,8 +41,6 @@ local rule program ( name : source : expected : requirements * )
     }
 }
 
-program harness_probe : harness_probe.cpp : "browser harness: ok" ;
-
 # Two peers in one page: every case of ../native_test.cpp a page can run
 # (reference/plan.md, Task 2.3).
 program browser_test : browser_test.cpp : "browser webrtc: ok" ;

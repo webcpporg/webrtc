@@ -33,7 +33,7 @@ import {once} from 'node:events'
 import {existsSync, mkdtempSync, readFileSync, readdirSync, rmSync} from 'node:fs'
 import {createServer} from 'node:http'
 import {homedir, tmpdir} from 'node:os'
-import {dirname, extname, join, resolve, sep} from 'node:path'
+import {dirname, extname, join, relative, resolve, sep} from 'node:path'
 import {setTimeout as delay} from 'node:timers/promises'
 import {fileURLToPath} from 'node:url'
 
@@ -55,12 +55,20 @@ const here = dirname(fileURLToPath(import.meta.url))
 const artifact = resolve(args[0])
 
 // The manifest of webcpp.variants is beside the jspi artifact, since the Jamfile gives each drive
-// its program's requirements, and the asyncify artifact is below it.
-const build = dirname(artifact)
-const manifest = join(build, `${program}.variants.json`)
+// its program's requirements. The scripts it names may lie outside that directory: b2 puts the
+// asyncify variant in webcpp-suspend-asyncify/, before the directories of the program's own
+// features (webcpp-webrtc-unsupported-ignore/). The page is served the nearest directory that
+// holds the manifest and every script.
+const manifest = join(dirname(artifact), `${program}.variants.json`)
 assert.ok(existsSync(manifest), `no manifest ${manifest} beside ${artifact}: give the drive `
     + 'the requirements of its program, which are propagated to the manifest')
-const manifestUrl = `/build/${program}.variants.json`
+const scripts = Object.values(JSON.parse(readFileSync(manifest, 'utf8')))
+    .map(entry => resolve(dirname(manifest), entry.script))
+let build = dirname(manifest)
+while (!scripts.every(script => script.startsWith(build + sep)) && dirname(build) !== build) {
+    build = dirname(build)
+}
+const manifestUrl = `/build/${relative(build, manifest).split(sep).join('/')}`
 
 const findChrome = () => {
     if (process.env.CHROME) return process.env.CHROME
@@ -319,23 +327,32 @@ try {
             + 'a channel carried a message')
     } finally { await page.close() }
 
+    // lightweight_test writes its summary on the standard error; anything else there is a failed
+    // check, which fails the run. The lines that follow it for a few seconds more, the program's
+    // other failures among them, are printed with it.
     const marker = /^check failed|^error:/
+    const failure = lines => lines.find(entry => marker.test(entry.line)
+        || (entry.stream === 'err' && entry.line !== 'No errors detected.'))
+    const ended = lines => lines.some(entry => entry.line === expected || /^check failed/.test(entry.line))
     for (const variant of ['jspi', 'asyncify']) {
         const page = await openPage(devtools, `${base}/page.html?manifest=${manifestUrl}`, {variant})
         let report
         try {
             const deadline = Date.now() + timeout * 1000
+            let grace
             for (;;) {
                 report = await page.evaluate('window.report')
                 const lines = report?.lines ?? []
-                // lightweight_test writes its summary on the standard error; anything else there
-                // is a failed check, which fails the run at once.
-                const failed = lines.find(entry => marker.test(entry.line)
-                    || (entry.stream === 'err' && entry.line !== 'No errors detected.'))
                 assert.ok(!report?.error, report?.error)
                 assert.deepEqual(page.problems, [], 'Chrome reported an exception or console.error')
-                assert.ok(!failed, `${program} (${variant}) failed: ${failed?.line}`)
-                if (report?.variant && lines.some(entry => entry.line === expected)) break
+                const failed = failure(lines)
+                if (failed) {
+                    grace ??= Date.now() + 3000
+                    assert.ok(Date.now() < grace && !ended(lines),
+                        `${program} (${variant}) failed: ${failed.line}`)
+                } else if (report?.variant && lines.some(entry => entry.line === expected)) {
+                    break
+                }
                 assert.ok(Date.now() < deadline,
                     `${program} (${variant}) did not print "${expected}" within ${timeout} s`)
                 await delay(50)
