@@ -32,6 +32,7 @@
 #include <array>
 #include <chrono>
 #include <cstddef>
+#include <cstring>
 #include <memory>
 #include <optional>
 #include <string>
@@ -45,7 +46,8 @@ using emscripten::val;
 
 // clang-format off
 // The test's RTCPeerConnection, which keeps every instance in `connections`, and its
-// RTCDataChannel; `fire(target, handler, event)` calls a handler as the browser would.
+// RTCDataChannel; `fire(target, handler, event)` calls a handler as the browser would, and
+// `holding` keeps the connection's promises unsettled until `releaseHeld()`.
 EM_JS(void, test_install_fakes, (), {
     class FakeChannel {
         constructor(label, init) {
@@ -74,6 +76,26 @@ EM_JS(void, test_install_fakes, (), {
         }
     }
     globalThis.FakeChannel = FakeChannel;
+    // While `holding`, the connection's promises wait for releaseHeld(), which the test calls.
+    globalThis.holding = false;
+    globalThis.held = [];
+    const later = action => {
+        if (!holding) return Promise.resolve().then(action);
+        return new Promise((resolve, reject) => {
+            held.push(() => {
+                try {
+                    resolve(action());
+                } catch (error) {
+                    reject(error);
+                }
+            });
+        });
+    };
+    globalThis.releaseHeld = () => {
+        const waiting = held;
+        held = [];
+        for (const release of waiting) release();
+    };
     globalThis.connections = [];
     globalThis.RTCPeerConnection = class {
         constructor(configuration) {
@@ -87,16 +109,22 @@ EM_JS(void, test_install_fakes, (), {
             this.candidates = [];
             connections.push(this);
         }
-        async setLocalDescription() {
-            this.localDescription = {type: this.remoteDescription ? 'answer' : 'offer', sdp: 'v=0 local'};
+        setLocalDescription() {
+            return later(() => {
+                this.localDescription = {type: this.remoteDescription ? 'answer' : 'offer', sdp: 'v=0 local'};
+            });
         }
-        async setRemoteDescription(description) {
-            if (description.sdp === 'bad') throw new DOMException('cannot parse', 'OperationError');
-            this.remoteDescription = description;
+        setRemoteDescription(description) {
+            return later(() => {
+                if (description.sdp === 'bad') throw new DOMException('cannot parse', 'OperationError');
+                this.remoteDescription = description;
+            });
         }
-        async addIceCandidate(candidate) {
-            if (!this.remoteDescription) throw new DOMException('no remote', 'InvalidStateError');
-            this.candidates.push(candidate);
+        addIceCandidate(candidate) {
+            return later(() => {
+                if (!this.remoteDescription) throw new DOMException('no remote', 'InvalidStateError');
+                this.candidates.push(candidate);
+            });
         }
         createDataChannel(label, init) {
             const channel = new FakeChannel(label, init);
@@ -591,6 +619,118 @@ void a_channel_accepted_late() {
     BOOST_TEST(incoming["closed"].as<bool>());
 }
 
+// An allocator that poisons what it frees and never gives it again, so that a state used after it
+// was freed reads poison and traps, rather than reading what it held.
+template <class T>
+struct poisoning_allocator {
+    using value_type = T;
+
+    poisoning_allocator() = default;
+
+    template <class U>
+    explicit poisoning_allocator(const poisoning_allocator<U>& /*other*/) noexcept {}
+
+    T* allocate(std::size_t n) { return std::allocator<T>().allocate(n); }
+
+    // Kept, never freed: the test's few states stay poisoned until the program ends.
+    void deallocate(T* p, std::size_t n) noexcept {
+        std::memset(static_cast<void*>(p), 0xDD, n * sizeof(T));
+    }
+
+    template <class U>
+    bool operator==(const poisoning_allocator<U>& /*other*/) const noexcept {
+        return true;
+    }
+};
+
+using poisoned_connection =
+    webrtc::basic_peer_connection<asio::any_io_executor, poisoning_allocator<std::byte>>;
+using poisoned_channel =
+    webrtc::basic_data_channel<asio::any_io_executor, poisoning_allocator<std::byte>>;
+
+// The usual Asio session: it owns its connection and its channel, and every pending handler holds
+// it, so that it lives as long as something waits.
+class session : public std::enable_shared_from_this<session> {
+public:
+    session(poisoned_connection pc, poisoned_channel dc, bool& destroyed, bool& called)
+        : pc_(std::move(pc)), dc_(std::move(dc)), destroyed_(destroyed), called_(called) {}
+
+    session(const session&) = delete;
+    session& operator=(const session&) = delete;
+    session(session&&) = delete;
+    session& operator=(session&&) = delete;
+
+    ~session() { destroyed_ = true; }
+
+    // Waits on the channel alone.
+    void wait_on_the_channel() {
+        dc_.async_wait_open([self = shared_from_this()](error_code) { self->called_ = true; });
+        dc_.async_receive(buffer_, [self = shared_from_this()](error_code, std::size_t, bool) {
+            self->called_ = true;
+        });
+    }
+
+    // Waits on the connection alone, a description in flight among them.
+    void wait_on_the_connection() {
+        pc_.async_wait_state_change(
+            [self = shared_from_this()](error_code, webrtc::peer_connection_state) {
+                self->called_ = true;
+            });
+        pc_.async_wait_ice_candidate(
+            [self = shared_from_this()](error_code, const poisoned_connection::ice_candidate&) {
+                self->called_ = true;
+            });
+        pc_.async_set_local_description(
+            [self = shared_from_this()](error_code,
+                                        const poisoned_connection::session_description&) {
+                self->called_ = true;
+            });
+    }
+
+private:
+    poisoned_connection pc_;
+    poisoned_channel dc_;
+    std::string data_;
+    asio::dynamic_string_buffer<char, std::char_traits<char>, std::allocator<char>> buffer_ =
+        asio::dynamic_buffer(data_);
+    bool& destroyed_;
+    bool& called_;
+};
+
+// The io_context is destroyed while handlers that own the connection and the channel wait: its
+// shutdown destroys them without calling them, and the state they freed is not used afterwards
+// (design.md, D8).
+void shutdown_while_handlers_own_the_facades(bool on_the_channel) {
+    webrtc::runtime rt;
+    auto io = std::make_unique<asio::io_context>();
+    bool destroyed = false;
+    bool called = false;
+    val::global().set("holding", val(true));
+    {
+        auto made = poisoned_connection::make(rt, io->get_executor(), no_servers);
+        if (!BOOST_TEST(made.has_value())) {
+            return;
+        }
+        auto created = made->create_data_channel("session");
+        if (!BOOST_TEST(created.has_value())) {
+            return;
+        }
+        const auto s =
+            std::make_shared<session>(std::move(*made), std::move(*created), destroyed, called);
+        if (on_the_channel) {
+            s->wait_on_the_channel();
+        } else {
+            s->wait_on_the_connection();
+        }
+    }
+    BOOST_TEST(!destroyed);
+    io.reset();
+    BOOST_TEST(destroyed);
+    BOOST_TEST(!called);
+    val::global().set("holding", val(false));
+    val::global("releaseHeld")();
+}
+
 }  // namespace
 
 int main() {
@@ -606,6 +746,8 @@ int main() {
     the_peers_close();
     the_connections_close();
     a_channel_accepted_late();
+    shutdown_while_handlers_own_the_facades(true);
+    shutdown_while_handlers_own_the_facades(false);
     // The io_context's run_for suspends main, whose returned status Asyncify loses.
     return webcpp::test::exit_status(boost::report_errors());
 }

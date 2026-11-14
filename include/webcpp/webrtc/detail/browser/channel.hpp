@@ -356,29 +356,36 @@ public:
      Asio's own operations are, and the browser's channel is closed.
     */
     void shutdown() noexcept override {
+        // A handler destroyed here may hold the last owner of the channel: the state lives until
+        // this returns, and the handlers are destroyed after every change of it, as Asio's own
+        // services destroy theirs.
+        const auto keep = this->weak_from_this().lock();
         bridge_ = nullptr;
         key_ = 0;
         ++generation_;
         posted_ = false;
         accepting_ = false;
-        if (open_ != nullptr) {
-            open_->discard();
-        }
-        if (close_ != nullptr) {
-            close_->discard();
-        }
-        if (low_ != nullptr) {
-            low_->discard();
-        }
-        if (receive_ != nullptr) {
-            receive_->discard();
-        }
+        pending<>* const open = std::exchange(open_, nullptr);
+        pending<>* const close = std::exchange(close_, nullptr);
+        pending<>* const low = std::exchange(low_, nullptr);
+        pending<std::size_t, bool>* const receive = std::exchange(receive_, nullptr);
         messages_.clear();
         queued_ = 0;
         ready_ = data_channel_state::closed;
         if (!channel_.isUndefined()) {
             static_cast<void>(take(webcpp_webrtc_detach(channel_.as_handle(), true)));
             static_cast<void>(take(webcpp_webrtc_close(channel_.as_handle())));
+            // A destruction that a handler starts below finds nothing left to do.
+            channel_ = emscripten::val::undefined();
+            connection_ = emscripten::val::undefined();
+        }
+        for (pending<>* const op : {open, close, low}) {
+            if (op != nullptr) {
+                op->discard();
+            }
+        }
+        if (receive != nullptr) {
+            receive->discard();
         }
     }
 

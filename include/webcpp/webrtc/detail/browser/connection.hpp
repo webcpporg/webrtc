@@ -402,21 +402,27 @@ public:
      Asio's own operations are, and the browser's connection is closed.
     */
     void shutdown() noexcept override {
+        // A handler destroyed here may hold the last owner of the connection: the state lives
+        // until this returns, and the handlers are destroyed after every change of it, as Asio's
+        // own services destroy theirs. Closed, the connection refuses what a handler's
+        // destruction asks of it meanwhile.
+        const auto keep = this->weak_from_this().lock();
         bridge_ = nullptr;
         key_ = 0;
         closed_ = true;
         discard_staged();
+        registry_.clear();
+        callback_ = emscripten::val::undefined();
+        if (!pc_.isUndefined()) {
+            static_cast<void>(take(webcpp_webrtc_detach(pc_.as_handle(), false)));
+            static_cast<void>(take(webcpp_webrtc_close(pc_.as_handle())));
+        }
         state_.discard();
         ice_.discard();
         candidates_.discard();
         channels_.discard();
         discard_all(locals_);
         discard_all(others_);
-        registry_.clear();
-        if (!pc_.isUndefined()) {
-            static_cast<void>(take(webcpp_webrtc_detach(pc_.as_handle(), false)));
-            static_cast<void>(take(webcpp_webrtc_close(pc_.as_handle())));
-        }
     }
 
 private:
