@@ -96,7 +96,9 @@ std::function<void()> after(int count, std::function<void()> last) {
 
 /** A message of `size` bytes, each the letter `fill`. */
 std::string message(std::size_t size, char fill) {
-    return std::string(size, fill);
+    std::string made;
+    made.assign(size, fill);
+    return made;
 }
 
 // Unread messages past max_received_bytes, charged as the browser delivers them, close the
@@ -175,12 +177,46 @@ void a_received_message_past_the_size() {
     BOOST_TEST(peer_saw && !*peer_saw);
 }
 
+/** The limit a browser announces to its peer in its description's a=max-message-size. */
+constexpr std::size_t announced = std::size_t{256} * 1024;
+
+/** How the refused asynchronous sends of refused_sends_leave_it_open completed, and when. */
+struct refusals {
+    std::optional<error_code> async_send;
+    std::optional<error_code> async_send_text;
+    bool returned = false;
+};
+
+// Sends from `ca`, whose bounds refused_sends_leave_it_open sets, what is refused, and the
+// largest message the peer allows; once the asynchronous refusals are posted, the text "after".
+void refuse(webrtc::data_channel& ca, refusals& r) {
+    const auto past_peer = message(announced + 1, 'p');
+    BOOST_TEST(ca.send(asio::buffer(past_peer)) == webrtc::error::message_too_large);
+    BOOST_TEST(ca.send_text(past_peer) == webrtc::error::message_too_large);
+    const auto largest = message(announced, 'l');
+    BOOST_TEST(!ca.send(asio::buffer(largest)));
+    BOOST_TEST_GE(ca.buffered_amount(), announced);
+    const auto more = message(std::size_t{64} * 1024, 'm');
+    BOOST_TEST(ca.send(asio::buffer(more)) == webrtc::error::buffered_amount_exceeded);
+    ca.async_send(asio::buffer(past_peer), [&r](error_code ec) {
+        BOOST_TEST(r.returned);
+        r.async_send = ec;
+    });
+    ca.async_send_text(past_peer, [&ca, &r](error_code ec) {
+        BOOST_TEST(r.returned);
+        r.async_send_text = ec;
+        BOOST_TEST(ca.ready_state() == webrtc::data_channel_state::open);
+        BOOST_TEST(!ca.send_text("after"));
+    });
+    r.returned = true;
+    BOOST_TEST(ca.ready_state() == webrtc::data_channel_state::open);
+}
+
 // A send is refused before the browser sees it, and the channel stays open: past the smaller of
 // max_message_size and the 256 KiB a browser announces, past max_buffered_amount, and through
 // async_send and async_send_text, whose refusal is posted. The peer receives only what was
 // accepted, the largest message it allows among it.
 void refused_sends_leave_it_open() {
-    constexpr std::size_t announced = std::size_t{256} * 1024;
     webrtc::options sender;
     sender.max_message_size = std::size_t{1024} * 1024;
     sender.max_buffered_amount = std::size_t{300} * 1024;
@@ -188,40 +224,19 @@ void refused_sends_leave_it_open() {
     std::optional<webrtc::data_channel> ca;
     std::optional<webrtc::data_channel> cb;
     reader got;
-    std::optional<error_code> async_refused;
-    std::optional<error_code> async_text_refused;
-    bool returned = false;
+    refusals r;
     webcpp::test::open_channel(p, "refusals", [&](webrtc::data_channel a, webrtc::data_channel b) {
         ca.emplace(std::move(a));
         cb.emplace(std::move(b));
-        const auto past_peer = message(announced + 1, 'p');
-        BOOST_TEST(ca->send(asio::buffer(past_peer)) == webrtc::error::message_too_large);
-        BOOST_TEST(ca->send_text(past_peer) == webrtc::error::message_too_large);
-        const auto largest = message(announced, 'l');
-        BOOST_TEST(!ca->send(asio::buffer(largest)));
-        BOOST_TEST_GE(ca->buffered_amount(), announced);
-        const auto more = message(std::size_t{64} * 1024, 'm');
-        BOOST_TEST(ca->send(asio::buffer(more)) == webrtc::error::buffered_amount_exceeded);
-        ca->async_send(asio::buffer(past_peer), [&](error_code ec) {
-            BOOST_TEST(returned);
-            async_refused = ec;
-        });
-        ca->async_send_text(past_peer, [&](error_code ec) {
-            BOOST_TEST(returned);
-            async_text_refused = ec;
-            BOOST_TEST(ca->ready_state() == webrtc::data_channel_state::open);
-            BOOST_TEST(!ca->send_text("after"));
-        });
-        returned = true;
-        BOOST_TEST(ca->ready_state() == webrtc::data_channel_state::open);
+        refuse(*ca, r);
         read_messages(*cb, got, 2, [&] {
             p.a->close();
             p.b->close();
         });
     });
     p.run();
-    BOOST_TEST(async_refused && *async_refused == webrtc::error::message_too_large);
-    BOOST_TEST(async_text_refused && *async_text_refused == webrtc::error::message_too_large);
+    BOOST_TEST(r.async_send && *r.async_send == webrtc::error::message_too_large);
+    BOOST_TEST(r.async_send_text && *r.async_send_text == webrtc::error::message_too_large);
     BOOST_TEST(!got.end);
     webcpp::test::require(BOOST_TEST_EQ(got.messages.size(), 2u));
     BOOST_TEST(got.messages[0] == message(announced, 'l'));
@@ -390,6 +405,24 @@ void closed_before_it_opened() {
     BOOST_TEST(channel->send_text("x") == webrtc::error::invalid_state);
 }
 
+// Accepts the next channel of `p.b` into `cb`, open and labelled "late", and reads `count`
+// messages from it into `got`; then both peers close.
+void accept_and_read(page_pair& p, std::optional<webrtc::data_channel>& cb, reader& got,
+                     std::size_t count) {
+    p.b->async_accept_data_channel([&p, &cb, &got, count](error_code ec, webrtc::data_channel dc) {
+        if (!BOOST_TEST(!ec)) {
+            return;
+        }
+        cb.emplace(std::move(dc));
+        BOOST_TEST(cb->label() == "late");
+        BOOST_TEST(cb->ready_state() == webrtc::data_channel_state::open);
+        read_messages(*cb, got, count, [&p] {
+            p.a->close();
+            p.b->close();
+        });
+    });
+}
+
 // A channel accepted after its messages arrived loses none: the browser opens it and delivers
 // them before the program accepts it, and they wait with it in the queue of incoming channels.
 void accepted_after_its_messages() {
@@ -409,20 +442,7 @@ void accepted_after_its_messages() {
         const std::string three = "three";
         BOOST_TEST(!ca.send(asio::buffer(three)));
         later.expires_after(unread);
-        later.async_wait([&](error_code) {
-            p.b->async_accept_data_channel([&](error_code ec, webrtc::data_channel dc) {
-                if (!BOOST_TEST(!ec)) {
-                    return;
-                }
-                cb.emplace(std::move(dc));
-                BOOST_TEST(cb->label() == "late");
-                BOOST_TEST(cb->ready_state() == webrtc::data_channel_state::open);
-                read_messages(*cb, got, 3, [&] {
-                    p.a->close();
-                    p.b->close();
-                });
-            });
-        });
+        later.async_wait([&](error_code) { accept_and_read(p, cb, got, 3); });
     });
     p.negotiate([](error_code ec) { BOOST_TEST(!ec); });
     p.run();

@@ -130,10 +130,11 @@ inline void open_channel(page_pair& p, std::string_view label,
 */
 inline int finish(const char* passed) {
     const int errors = boost::report_errors();
+    // What stdout says is what run.mjs reads; a failure to write it fails the run there.
     if (errors == 0) {
-        std::puts(passed);
+        static_cast<void>(std::puts(passed));
     } else {
-        std::printf("check failed: %d errors\n", errors);
+        static_cast<void>(std::printf("check failed: %d errors\n", errors));
     }
     return errors;
 }

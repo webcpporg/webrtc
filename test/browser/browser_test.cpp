@@ -195,7 +195,7 @@ void a_candidate_carries_its_line_and_fragment() {
     webcpp::test::require(BOOST_TEST(made.has_value()));
     webrtc::peer_connection& pc = *made;
     // A channel gives the offer its one m-line, the application's.
-    auto channel = pc.create_data_channel("c");
+    const auto channel = pc.create_data_channel("c");
     webcpp::test::require(BOOST_TEST(channel.has_value()));
     std::optional<webrtc::ice_candidate> first;
     pc.async_set_local_description([&](error_code ec, const webrtc::session_description& offer) {

@@ -29,7 +29,6 @@
 
 namespace webrtc = webcpp::webrtc;
 namespace asio = webcpp::asio;
-using webrtc::detail::error_code;
 
 namespace {
 
@@ -41,6 +40,8 @@ webrtc::configuration bound() {
 }
 
 #ifdef WEBCPP_WEBRTC_UNSUPPORTED_IGNORE
+
+using webrtc::detail::error_code;
 
 // Ignored: two peers given bind_address connect over the page's own host candidates.
 void bind_address_is_ignored() {
