@@ -103,9 +103,7 @@ public:
           options_(opts),
           candidates_(opts.max_queued_candidates, allocator),
           channels_(opts.max_queued_channels, allocator),
-          staged_candidates_(values_allocator(allocator)),
-          staged_channels_(channels_allocator(allocator)),
-          staged_settlements_(values_allocator(allocator)),
+          staged_(staged_allocator(allocator)),
           locals_(locals_allocator(allocator)),
           others_(others_allocator(allocator)),
           registry_(registry_allocator(allocator)) {}
@@ -387,10 +385,12 @@ public:
                     }
                     ++staged_counted_;
                 }
-                staged_candidates_.push_back(event);
+                staged_.push_back(arrival{event_kind::candidate, event, nullptr});
                 break;
             case event_kind::channel: arrived(event["channel"]); break;
-            case event_kind::settled: staged_settlements_.push_back(event); break;
+            case event_kind::settled:
+                staged_.push_back(arrival{event_kind::settled, event, nullptr});
+                break;
             default: return false;
         }
         notify();
@@ -434,10 +434,19 @@ private:
         pending<Values...>* op = nullptr;
     };
 
-    using values_allocator =
-        std::allocator_traits<Allocator>::template rebind_alloc<emscripten::val>;
-    using channels_allocator =
-        std::allocator_traits<Allocator>::template rebind_alloc<std::shared_ptr<channel_type>>;
+    /**
+     A candidate, a channel or a settlement, staged in the order it arrived: a settlement the
+     browser delivered before a candidate completes its operation first.
+    */
+    struct arrival {
+        event_kind kind = event_kind::candidate;
+        // The event of a candidate or of a settlement.
+        emscripten::val event;
+        // The state of a channel, which took the browser's channel over as it arrived.
+        std::shared_ptr<channel_type> channel;
+    };
+
+    using staged_allocator = std::allocator_traits<Allocator>::template rebind_alloc<arrival>;
     using locals_allocator =
         std::allocator_traits<Allocator>::template rebind_alloc<promised<session_description>>;
     using others_allocator = std::allocator_traits<Allocator>::template rebind_alloc<promised<>>;
@@ -476,22 +485,20 @@ private:
             ice_.update(*std::exchange(staged_ice_, std::nullopt));
         }
         staged_counted_ = 0;
-        while (!staged_candidates_.empty()) {
-            const emscripten::val event = std::move(staged_candidates_.front());
-            staged_candidates_.pop_front();
-            gathered(event);
-        }
-        while (!staged_channels_.empty()) {
-            auto channel = std::move(staged_channels_.front());
-            staged_channels_.pop_front();
-            // Past the backlog, the refused channel is destroyed here, which closes it.
-            static_cast<void>(
-                channels_.push(channel_access::make<data_channel>(std::move(channel))));
-        }
-        while (!staged_settlements_.empty()) {
-            const emscripten::val event = std::move(staged_settlements_.front());
-            staged_settlements_.pop_front();
-            settle(event);
+        staged_channels_ = 0;
+        // In the order they arrived, whatever their kind.
+        while (!staged_.empty()) {
+            arrival next = std::move(staged_.front());
+            staged_.pop_front();
+            switch (next.kind) {
+                case event_kind::candidate: gathered(next.event); break;
+                case event_kind::channel:
+                    // Past the backlog, the refused channel is destroyed here, which closes it.
+                    static_cast<void>(channels_.push(
+                        channel_access::make<data_channel>(std::move(next.channel))));
+                    break;
+                default: settle(next.event); break;
+            }
         }
     }
 
@@ -595,11 +602,13 @@ private:
     // A channel the peer opened: its state takes it over at once, so that nothing it delivers is
     // lost, unless the backlog has no room, when it is closed.
     void arrived(const emscripten::val& channel) {
-        if (staged_channels_.size() >= channels_.room()) {
+        if (staged_channels_ >= channels_.room()) {
             static_cast<void>(take(webcpp_webrtc_close(channel.as_handle())));
             return;
         }
-        staged_channels_.push_back(adopt(channel));
+        staged_.push_back(
+            arrival{event_kind::channel, emscripten::val::undefined(), adopt(channel)});
+        ++staged_channels_;
     }
 
     std::shared_ptr<channel_type> adopt(const emscripten::val& channel) {
@@ -618,9 +627,8 @@ private:
         staged_state_.reset();
         staged_ice_.reset();
         staged_counted_ = 0;
-        staged_candidates_.clear();
-        staged_channels_.clear();
-        staged_settlements_.clear();
+        staged_channels_ = 0;
+        staged_.clear();
     }
 
     // Leaves the bridge and sets the handlers to null, so that nothing reaches the state.
@@ -652,10 +660,10 @@ private:
     event_queue<data_channel, Allocator> channels_;
     std::optional<peer_connection_state> staged_state_;
     std::optional<ice_connection_state> staged_ice_;
+    // The candidates that are not exempt and the channels staged, which the bounds count.
     std::size_t staged_counted_ = 0;
-    std::deque<emscripten::val, values_allocator> staged_candidates_;
-    std::deque<std::shared_ptr<channel_type>, channels_allocator> staged_channels_;
-    std::deque<emscripten::val, values_allocator> staged_settlements_;
+    std::size_t staged_channels_ = 0;
+    std::deque<arrival, staged_allocator> staged_;
     std::list<promised<session_description>, locals_allocator> locals_;
     std::list<promised<>, others_allocator> others_;
     std::vector<std::weak_ptr<channel_type>, registry_allocator> registry_;

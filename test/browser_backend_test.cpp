@@ -142,6 +142,12 @@ EM_JS(void, test_install_fakes, (), {
     globalThis.lastConnection = () => connections[connections.length - 1];
     globalThis.bytes = (size, value) => new Uint8Array(size).fill(value).buffer;
 });
+
+// Returns to the event loop until its next task, without running the io_context: what the browser
+// delivers meanwhile is staged, one batch for the next notification.
+EM_ASYNC_JS(void, test_tick, (), {
+    await new Promise(resolve => setTimeout(resolve, 0));
+});
 // clang-format on
 
 namespace {
@@ -310,6 +316,39 @@ void candidates_follow_promises() {
         BOOST_TEST_EQ(candidates[0]["sdpMLineIndex"].as<int>(), 0);
         BOOST_TEST(candidates[0]["usernameFragment"].strictlyEquals(val("u")));
     }
+}
+
+// Arrivals of different kinds keep their order: a description's settlement the browser delivered
+// before a candidate, in one batch, completes its operation first, so that a program that sends
+// each candidate as it comes sends its offer before the offer's candidates (design.md, D8).
+void arrivals_keep_their_order() {
+    asio::io_context io;
+    webrtc::runtime rt;
+    auto made = connection::make(rt, io.get_executor(), no_servers);
+    if (!BOOST_TEST(made.has_value())) {
+        return;
+    }
+    connection& pc = *made;
+    std::vector<std::string> order;
+    pc.async_wait_ice_candidate([&](error_code ec, const connection::ice_candidate&) {
+        if (!ec) {
+            order.emplace_back("candidate");
+        }
+    });
+    pc.async_set_local_description([&](error_code ec, const connection::session_description&) {
+        if (!ec) {
+            order.emplace_back("offer");
+        }
+    });
+    test_tick();
+    val candidate = val::object();
+    candidate.set("candidate", val("candidate:1 1 udp 1 127.0.0.1 5000 typ host"));
+    candidate.set("sdpMid", val("0"));
+    val event = val::object();
+    event.set("candidate", candidate);
+    fire(last_connection(), "onicecandidate", event);
+    settle(io);
+    BOOST_TEST((order == std::vector<std::string>{"offer", "candidate"}));
 }
 
 // A send is refused, and the channel stays open, when it is not open, past max_message_size or
@@ -738,6 +777,7 @@ int main() {
     connection_events();
     descriptions_follow_promises();
     candidates_follow_promises();
+    arrivals_keep_their_order();
     sends_and_their_refusals();
     messages_and_the_buffer();
     the_budget_or_the_size(false);
