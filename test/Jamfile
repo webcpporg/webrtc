@@ -114,3 +114,11 @@ webcpp.run config_boundary : config_provider.cpp config_consumer.cpp
   : <library>/webcpp/webrtc//webrtc : emscripten ;
 webcpp.link-fail config_mismatch : config_provider.cpp config_consumer.cpp
   : <library>/webcpp/webrtc//webrtc <define>WEBCPP_WEBRTC_TEST_MISMATCH : emscripten ;
+
+# The browser's peer connection and data channel under node, with the
+# test's own RTCPeerConnection, whose events the test fires: the semantics
+# a fake can pin; a real browser's behaviour is test/browser's.
+webcpp.run browser_backend : browser_backend_test.cpp : <library>/webcpp/webrtc//webrtc
+  : emscripten ;
+webcpp.run browser_backend_no_exceptions : browser_backend_test.cpp
+  : <library>/webcpp/webrtc//webrtc <exception-handling>off : emscripten ;
