@@ -1,0 +1,20 @@
+# Copyright (c) 2026 WebCpp.org
+#
+# Distributed under the Boost Software License, Version 1.0. (See
+# accompanying file LICENSE_1_0.txt or copy at
+# https://www.boost.org/LICENSE_1_0.txt)
+
+# The page's programs: each runs two peers in one process, on the loopback,
+# and prints what the page shows. libdatachannel's threads need
+# threading=multi.
+project : requirements <library>/webcpp/webrtc//webrtc <threading>multi ;
+
+import webcpp ;
+
+# Increment 1 builds natively only; increment 2 adds emscripten.
+webcpp.targets native ;
+
+webcpp.example webrtc_quick_start.cpp : : native ;
+webcpp.example webrtc_signalling.cpp : : native ;
+webcpp.example webrtc_pacing.cpp : : native ;
+webcpp.example webrtc_errors.cpp : : native ;

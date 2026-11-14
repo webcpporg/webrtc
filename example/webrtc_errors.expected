@@ -1,0 +1,5 @@
+a malformed STUN URL: webcpp.webrtc 5, Syntax error
+a second connection: webcpp.webrtc 10, Too many peer connections
+a channel with both limits: webcpp.webrtc 4, Argument out of its range
+a send before the channel is open: webcpp.webrtc 1, Invalid state
+a candidate too early: webcpp.webrtc 1, Invalid state
