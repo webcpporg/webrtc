@@ -109,8 +109,7 @@ void state_queues_and_outputs_in_the_allocator() {
             });
         });
         webcpp::test::negotiate(*first, *second, ab, ba, [](error_code ec) { BOOST_TEST(!ec); });
-        io.run_for(
-            webcpp::test::exchange_limit);  // lint-run: the peers' events come from the browser
+        io.run_for(webcpp::test::exchange_limit);  // lint-run: the browser delivers the events
         BOOST_TEST(received == std::optional<std::size_t>(7));
         BOOST_TEST(text == "counted");
         BOOST_TEST(state.has_value());
