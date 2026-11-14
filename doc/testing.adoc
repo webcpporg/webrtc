@@ -101,6 +101,13 @@ include::{library-root}/test/Jamfile[tag=native]
   limit, refused sends, the close paths, allocation through a counting
   resource and `bind_address`, each program in both suspension variants and
   with exceptions off.
+
+| the `interop` lane
+| A native peer and a peer in headless Chrome (`test/interop/`), the same
+  code against the public API, signalled through a relay over
+  webcpp::beast's WebSocket on 127.0.0.1: each offers in turn, sends `ping`
+  and gets `pong`, in both suspension variants; natively, two peers through
+  the same relay.
 |===
 
 From the root of a webcpp checkout, the first two of these build and run
@@ -115,16 +122,23 @@ b2 threading=multi exception-handling=off libs/webrtc/test libs/webrtc/example
 b2 threading=multi address-sanitizer=norecover undefined-sanitizer=norecover libs/webrtc/test
 ----
 
-On emscripten the tests run under Node, and the `browser` lane in headless
-Chrome, which `CHROME` names, else Playwright's cached Chromium on macOS. The
-lane starts Chrome with `--disable-features=WebRtcHideLocalIpsWithMdns`, so
-that a page's host candidates are its addresses, and checks first, with two
-peers of plain JavaScript, that the browser connects at all:
+On emscripten the tests run under Node, and the `browser` and `interop` lanes
+in headless Chrome, which `CHROME` names, else Playwright's cached Chromium on
+macOS. Both start Chrome with `--disable-features=WebRtcHideLocalIpsWithMdns`,
+so that a page's host candidates are its addresses; the `browser` lane checks
+first, with two peers of plain JavaScript, that the browser connects at all.
+Chrome 156 offers a page with no media permission only its default-route
+address, so the `interop` driver grants the page's origin the microphone,
+which starts no capture, and the page then offers 127.0.0.1 too, where the
+native peer listens. The lanes run by name:
 
 [source,bash]
 ----
 b2 toolset=emscripten webcpp-suspend=jspi libs/webrtc/test
 b2 toolset=emscripten webcpp-suspend=asyncify libs/webrtc/test
+b2 toolset=emscripten libs/webrtc/test/browser//browser
+b2 threading=multi libs/webrtc/test/interop//interop
+b2 toolset=emscripten libs/webrtc/test/interop//interop
 ----
 
 The lifetime and native tests run under ThreadSanitizer too, the lifetime

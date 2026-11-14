@@ -99,3 +99,9 @@ policy do not link together.* The browser's classes live in an inline
 namespace named after the policy, so a channel passed between two such units
 names two different types. _Held by_ `config_boundary`, which links, and
 `config_mismatch`, which must not.
+. [[webrtc-invariant-17]]*A native peer and a browser peer connect and
+talk.* A native peer and a peer in headless Chrome, signalled through a relay
+as JSON of the W3C's `RTCSessionDescriptionInit` and `RTCIceCandidateInit`,
+connect with either one offering and exchange messages both ways, in both
+suspension variants; the page's peer passes on every candidate Chrome
+gathers, in order, with the end. _Held by_ the `interop` lane.
