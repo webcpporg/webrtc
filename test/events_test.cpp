@@ -19,6 +19,8 @@
 #include <webcpp/asio/cancellation_signal.hpp>     // lint-world: a handler's cancellation
 #include <webcpp/asio/io_context.hpp>              // lint-world: the tests' event loop
 
+#include <webcpp/test/exit_status.hpp>
+
 #include <boost/core/lightweight_test.hpp>
 
 #include <cstddef>
@@ -179,6 +181,60 @@ void close_aborts_and_then_refuses() {
     BOOST_TEST(watch.current() == state::closed);
 }
 
+// What a queue would take now, which the browser checks as an event arrives, before the executor
+// drains it: the bound less what it keeps, one more while a wait is pending, none once closed; the
+// end of gathering takes none of it.
+void the_room_left() {
+    asio::io_context io;
+    using candidate = webrtc::ice_candidate;
+    webrtc::detail::event_queue<candidate, std::allocator<std::byte>> queue(2, {});
+    BOOST_TEST_EQ(queue.room(), 2u);
+    BOOST_TEST(!queue.push(candidate{"candidate:1", "0", 0, ""}));
+    BOOST_TEST(!queue.push(candidate{}, true));
+    BOOST_TEST_EQ(queue.room(), 1u);
+    int delivered = 0;
+    for (int i = 0; i < 3; ++i) {
+        queue.wait(webrtc::detail::make_operation(
+            [&](error_code ec, const candidate&) {
+                if (!ec) {
+                    ++delivered;
+                }
+            },
+            io.get_executor(), std::tuple<candidate>{}, webrtc::detail::wait_cancellation));
+        BOOST_TEST_EQ(queue.room(), i < 2 ? 2u : 3u);
+        io.restart();
+        io.poll();
+    }
+    BOOST_TEST_EQ(delivered, 2);
+    queue.close(asio::error::operation_aborted);
+    BOOST_TEST_EQ(queue.room(), 0u);
+}
+
+// Discarding ends a wait without calling its handler, as the io_context's shutdown destroys an
+// operation: nothing is posted, no work is left, and a later wait is refused as after close.
+void discard_ends_a_wait_unheard() {
+    asio::io_context io;
+    webrtc::detail::state_watch<state> watch;
+    bool ran = false;
+    watch.wait(wait_op(io, [&](error_code, state) { ran = true; }));
+    watch.discard();
+    watch.update(state::connected);
+    using candidate = webrtc::ice_candidate;
+    webrtc::detail::event_queue<candidate, std::allocator<std::byte>> queue(2, {});
+    queue.wait(webrtc::detail::make_operation([&](error_code, const candidate&) { ran = true; },
+                                              io.get_executor(), std::tuple<candidate>{},
+                                              webrtc::detail::wait_cancellation));
+    queue.discard();
+    BOOST_TEST(queue.push(candidate{"candidate:1", "0", 0, ""}).has_value());
+    BOOST_TEST_EQ(io.run(), 0u);  // lint-run: drains the posted completions of this test
+    BOOST_TEST(!ran);
+    std::optional<error_code> later;
+    watch.wait(wait_op(io, [&](error_code ec, state) { later = ec; }));
+    io.restart();
+    io.run();  // lint-run: drains the posted completions of this test
+    BOOST_TEST(later && *later == webrtc::error::closed);
+}
+
 // An allocator that counts what it gives, as a handler's associated allocator.
 template <class T>
 struct counting_allocator {
@@ -228,6 +284,9 @@ int main() {
     the_bound_keeps_a_place_for_the_end();
     a_satisfied_wait_is_posted();
     close_aborts_and_then_refuses();
+    the_room_left();
+    discard_ends_a_wait_unheard();
     an_operation_is_in_its_handlers_allocator();
-    return boost::report_errors();
+    // On emscripten io_context::run may suspend main, whose returned status Asyncify then loses.
+    return webcpp::test::exit_status(boost::report_errors());
 }

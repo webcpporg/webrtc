@@ -70,6 +70,17 @@ public:
         }
     }
 
+    /**
+     Ends the watch as the io_context's shutdown ends an operation: the wait is destroyed without
+     its handler being called, and nothing more is delivered.
+    */
+    void discard() noexcept {
+        closed_ = true;
+        if (waiter_ != nullptr) {
+            waiter_->discard();
+        }
+    }
+
 private:
     void deliver() {
         if (waiter_ != nullptr && current_ != delivered_) {
@@ -144,6 +155,17 @@ public:
     /** The number of events kept. */
     [[nodiscard]] std::size_t size() const noexcept { return queue_.size(); }
 
+    /**
+     How many events that are not exempt `push` would take now: the bound less those kept, and one
+     more for a pending wait; none once closed.
+    */
+    [[nodiscard]] std::size_t room() const noexcept {
+        if (closed_) {
+            return 0;
+        }
+        return (waiter_ != nullptr ? 1 : 0) + (bound_ - counted_);
+    }
+
     /** Ends the queue: what it keeps is dropped, and the wait fails with `ec`. */
     void close(error_code ec) {
         closed_ = true;
@@ -151,6 +173,19 @@ public:
         queue_.clear();
         if (waiter_ != nullptr) {
             waiter_->fail(ec);
+        }
+    }
+
+    /**
+     Ends the queue as the io_context's shutdown ends an operation: what it keeps is dropped, and
+     the wait is destroyed without its handler being called.
+    */
+    void discard() noexcept {
+        closed_ = true;
+        counted_ = 0;
+        queue_.clear();
+        if (waiter_ != nullptr) {
+            waiter_->discard();
         }
     }
 
