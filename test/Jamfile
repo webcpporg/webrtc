@@ -115,10 +115,13 @@ webcpp.run bench : ../bench/receive_bench.cpp
 #   bind_address failing make under the default policy, and ignored under
 #   webcpp-webrtc-unsupported=ignore (browser_policy_ignore).
 #
-# Each runs in the suspension variant b2 is asked for, and in asyncify
-# whatever b2 is asked for (the _asyncify twins, as webcpp::asio's browser
-# tests), so that a lane that asks for jspi alone runs both; each with
-# exceptions and without.
+# Each runs in the suspension variant b2 is asked for, and in asyncify (the
+# _asyncify twins, each with exceptions and without), which form the own
+# lane asyncify, as webcpp::asio's browser tests do: a target that names
+# <webcpp-suspend>asyncify is declared only in a lane of emscripten's, since
+# asyncify composes <exception-handling-method>js, a feature only the
+# emscripten toolset defines, which a build with no emscripten configured
+# cannot expand.
 local browser-tests = browser_imports browser_runtime browser_backend browser_policy ;
 for local test in $(browser-tests)
 {
@@ -130,6 +133,7 @@ for local test in $(browser-tests)
     webcpp.run $(test)_asyncify_no_exceptions : $(test)_test.cpp
       : <library>/webcpp/webrtc//webrtc <webcpp-suspend>asyncify <exception-handling>off
       : emscripten ;
+    .asyncify += $(test)_asyncify $(test)_asyncify_no_exceptions ;
 }
 for local suspend in "" _asyncify
 {
@@ -156,7 +160,14 @@ for local suspend in "" _asyncify
     webcpp.link-fail config_mismatch$(suspend) : config_provider.cpp config_consumer.cpp
       : <library>/webcpp/webrtc//webrtc <conditional>@native-threads
         <define>WEBCPP_TEST_WEBRTC_MISMATCH $(variant) : $(boundary-targets) ;
+    if $(suspend)
+    {
+        .asyncify += browser_policy_ignore$(suspend) browser_policy_ignore$(suspend)_no_exceptions
+          config_boundary$(suspend) config_boundary$(suspend)_no_exceptions
+          config_mismatch$(suspend) ;
+    }
 }
+webcpp.lane asyncify : $(.asyncify) : emscripten ;
 
 # The browser lane: two peers in one page of headless Chrome, both suspension
 # variants, with exceptions on and off (test/browser/Jamfile).

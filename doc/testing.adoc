@@ -94,8 +94,11 @@ include::{library-root}/test/Jamfile[tag=native]
   channel's attributes, the order of arrivals of different kinds,
   cancellation, a close with a notification in flight, and the `io_context`
   destroyed while handlers own the objects.
-  Each runs with exceptions off too, and in the asyncify variant whatever the
-  build asks for, its `_asyncify` twins.
+  Each runs with exceptions off too, and in the asyncify variant, its
+  `_asyncify` twins, which form the own lane `asyncify` on emscripten, as
+  webcpp::asio's do: a target that names `<webcpp-suspend>asyncify` belongs
+  in a lane of emscripten's, since a build with no emscripten configured
+  cannot expand that feature.
 
 | `native_policy`, `native_policy_ignore`, and their `_no_exceptions` twins
 | A data channel's `max_packet_life_time` of 0 under each policy: refused
