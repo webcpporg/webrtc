@@ -96,6 +96,9 @@ public:
     static boost::system::result<basic_peer_connection> make(
         runtime& rt, const Executor& executor, const configuration& config,
         const options& opts = options(), const Allocator& allocator = Allocator()) {
+        // The slot is moved into the state below, which a const slot could not be: through
+        // libstdc++'s polymorphic_allocator construction misc-const-correctness sees no change.
+        // NOLINTNEXTLINE(misc-const-correctness)
         detail::runtime_slot slot(rt);
         if (!slot) {
             return make_error_code(error::too_many_peer_connections);
