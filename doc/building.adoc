@@ -65,6 +65,13 @@ and stops with `#error` on WASI, where no WebRTC exists.
 
 The b2 feature `webcpp-webrtc-unsupported=error|ignore`, propagated, chooses
 what a setting a target cannot honour does: fail with
-`operation_not_supported`, the default, or be ignored
-(<<webrtc-differences>>). Natively every setting is honoured; in the browser
-`configuration::bind_address` is the one it decides.
+`operation_not_supported`, the default, or be ignored where the platform does
+something equivalent of its own (<<webrtc-differences>>). Natively it
+decides a data channel's `max_packet_life_time` of 0
+(<<webrtc-native-policy>>), in the browser `configuration::bind_address`
+(<<webrtc-browser-policy>>). On both targets the classes live in an inline
+namespace named after the policy, `unsupported_error` or
+`unsupported_ignore`, so their spelled names are the same,
+`webcpp::webrtc::peer_connection` among them, and two translation units
+built with different policies that pass an object between them fail to link
+instead of disagreeing at run time.

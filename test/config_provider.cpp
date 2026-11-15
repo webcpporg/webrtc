@@ -4,7 +4,7 @@
 // accompanying file LICENSE_1_0.txt or copy at
 // https://www.boost.org/LICENSE_1_0.txt)
 
-// A translation unit built apart, with the policy that refuses what the browser cannot honour,
+// A translation unit built apart, with the policy that refuses what a target cannot honour,
 // whichever the build asks for: it takes a channel across its boundary (design.md, D14).
 #undef WEBCPP_WEBRTC_UNSUPPORTED_IGNORE
 #undef WEBCPP_WEBRTC_UNSUPPORTED_ERROR

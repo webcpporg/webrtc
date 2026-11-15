@@ -40,17 +40,14 @@ namespace webcpp::webrtc::detail {
 struct channel_access;
 }  // namespace webcpp::webrtc::detail
 
-// In the browser the classes live in an inline namespace named after the unsupported policy, so
-// that translation units that disagree on it name different types and fail to link
-// (design.md, D14); natively, where every setting is honoured, they do not.
+// The classes live in an inline namespace named after the unsupported policy, so that translation
+// units that disagree on it name different types and fail to link (design.md, D14).
 // NOLINTNEXTLINE(modernize-concat-nested-namespaces): the policy selects an inline namespace
 namespace webcpp::webrtc {
-#ifdef WEBCPP_TARGET_EMSCRIPTEN
 #ifdef WEBCPP_WEBRTC_UNSUPPORTED_IGNORE
 inline namespace unsupported_ignore {
 #else
 inline namespace unsupported_error {
-#endif
 #endif
 
 template <class Executor, class Allocator>
@@ -330,8 +327,8 @@ public:
      How long the channel retransmits a message, in milliseconds, the W3C's `maxPacketLifeTime`.
 
      @return The limit the channel was created with, by this program or by the peer, or nothing
-     for a channel without one. Natively a limit of 0 is `max_retransmits()` 0, as libdatachannel
-     takes and gives it (the table of differences), and a peer's limit past 65,535 reads as
+     for a channel without one. Natively a limit of 0 reads as `max_retransmits()` 0, as
+     libdatachannel gives it (the table of differences), and a peer's limit past 65,535 reads as
      65,535.
     */
     [[nodiscard]] std::optional<std::uint16_t> max_packet_life_time() const noexcept {
@@ -413,9 +410,7 @@ private:
 /** A data channel on Asio's type-erased executor, in the standard allocator. */
 using data_channel = basic_data_channel<>;
 
-#ifdef WEBCPP_TARGET_EMSCRIPTEN
 }  // namespace unsupported_error or unsupported_ignore
-#endif
 }  // namespace webcpp::webrtc
 
 namespace webcpp::webrtc::detail {

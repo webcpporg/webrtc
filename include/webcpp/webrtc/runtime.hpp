@@ -22,22 +22,26 @@
 #include <utility>
 
 #ifndef WEBCPP_TARGET_EMSCRIPTEN
-namespace webcpp::webrtc::detail {
-struct runtime_access;
-}  // namespace webcpp::webrtc::detail
-#endif
-
-// In the browser the classes live in an inline namespace named after the unsupported policy, so
-// that translation units that disagree on it name different types and fail to link
-// (design.md, D14); natively, where every setting is honoured, they do not.
 // NOLINTNEXTLINE(modernize-concat-nested-namespaces): the policy selects an inline namespace
-namespace webcpp::webrtc {
-#ifdef WEBCPP_TARGET_EMSCRIPTEN
+namespace webcpp::webrtc::detail {
 #ifdef WEBCPP_WEBRTC_UNSUPPORTED_IGNORE
 inline namespace unsupported_ignore {
 #else
 inline namespace unsupported_error {
 #endif
+struct runtime_access;
+}  // namespace unsupported_error or unsupported_ignore
+}  // namespace webcpp::webrtc::detail
+#endif
+
+// The classes live in an inline namespace named after the unsupported policy, so that translation
+// units that disagree on it name different types and fail to link (design.md, D14).
+// NOLINTNEXTLINE(modernize-concat-nested-namespaces): the policy selects an inline namespace
+namespace webcpp::webrtc {
+#ifdef WEBCPP_WEBRTC_UNSUPPORTED_IGNORE
+inline namespace unsupported_ignore {
+#else
+inline namespace unsupported_error {
 #endif
 
 /**
@@ -160,13 +164,10 @@ private:
 #endif
 };
 
-#ifdef WEBCPP_TARGET_EMSCRIPTEN
 }  // namespace unsupported_error or unsupported_ignore
-#endif
 }  // namespace webcpp::webrtc
 
-#ifdef WEBCPP_TARGET_EMSCRIPTEN
-
+// The slot names the runtime, so it lives in the policy's namespace too.
 // NOLINTNEXTLINE(modernize-concat-nested-namespaces): the policy selects an inline namespace
 namespace webcpp::webrtc::detail {
 #ifdef WEBCPP_WEBRTC_UNSUPPORTED_IGNORE
@@ -174,6 +175,8 @@ inline namespace unsupported_ignore {
 #else
 inline namespace unsupported_error {
 #endif
+
+#ifdef WEBCPP_TARGET_EMSCRIPTEN
 
 /**
  One connection's place under a runtime's cap: held when the page's census counts fewer
@@ -216,12 +219,7 @@ private:
     bool held_ = false;
 };
 
-}  // namespace unsupported_error or unsupported_ignore
-}  // namespace webcpp::webrtc::detail
-
 #else
-
-namespace webcpp::webrtc::detail {
 
 /** The library's access to a runtime's count. */
 struct runtime_access {
@@ -277,8 +275,9 @@ private:
     runtime* runtime_ = nullptr;
 };
 
-}  // namespace webcpp::webrtc::detail
-
 #endif  // WEBCPP_TARGET_EMSCRIPTEN
+
+}  // namespace unsupported_error or unsupported_ignore
+}  // namespace webcpp::webrtc::detail
 
 #endif  // WEBCPP_WEBRTC_RUNTIME_HPP

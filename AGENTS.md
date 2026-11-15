@@ -26,7 +26,11 @@ and its plan are in `proposals/libraries/webrtc/openspec/changes/genesis`.
   (design.md, D8): every call into the page is an `EM_ASM` function of `detail/browser/imports.hpp`
   that catches JavaScript's exceptions in JavaScript and reports their name; `deliver` only
   records and posts one notification per batch; a send is checked before the browser sees it.
-  The browser classes live in the unsupported policy's inline namespace (D14). Under Node, which
-  has no `RTCPeerConnection`, tests use a fake of their own (`test/browser_backend_test.cpp`);
-  real-browser behaviour is the `browser` lane's (`test/browser/`, headless Chrome).
+  Under Node, which has no `RTCPeerConnection`, tests use a fake of their own
+  (`test/browser_backend_test.cpp`); real-browser behaviour is the `browser` lane's
+  (`test/browser/`, headless Chrome).
+- **The unsupported policy** (D14) names the inline namespace the classes live in, on both
+  targets, so that translation units that disagree on it fail to link (`config_mismatch`).
+  Natively it decides a channel's `max_packet_life_time` of 0, which libdatachannel's C API
+  takes as 0 retransmissions; in the browser, `configuration::bind_address`.
 - **Increment 3** moves trystero's WebRTC onto this library, a change of trystero's.

@@ -25,7 +25,9 @@ peers create themselves with the same id, which neither announces and
 neither accepts. `create_data_channel` returns a `result`: both reliability
 limits at once, `negotiated` without an `id`, the id 65535, or a label or
 protocol past 65,535 bytes fail with `type_error`; a closed connection with
-`invalid_state`.
+`invalid_state`; natively, under the default policy, a
+`max_packet_life_time` of 0 with `operation_not_supported`
+(<<webrtc-native-policy>>).
 
 A channel is movable and not copyable; it belongs to whoever holds it, and
 its executor's context outlives it. `ready_state()`, `id()` and
@@ -70,9 +72,10 @@ and the end the peer accepted reads what the creator announced:
 include::{examples}/webrtc_attributes.expected[]
 ----
 
-Natively a `max_packet_life_time` of 0 reads as a `max_retransmits` of 0, at
-both ends, since libdatachannel takes and gives it so
-(<<webrtc-differences>>).
+Natively a channel the peer announced with a `max_packet_life_time` of 0
+reads as one of `max_retransmits` 0, since libdatachannel gives it so, and
+one created with it under `webcpp-webrtc-unsupported=ignore` reads so at
+both ends (<<webrtc-differences>>).
 
 [#webrtc-channels-receiving]
 === Receiving

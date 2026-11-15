@@ -96,10 +96,10 @@ completes with `receive_overflow` or `message_too_large`. _Held by_
 `browser_backend` (`the_budget_or_the_size`) and the `browser` lane
 (`unread_messages_past_the_budget`, `a_received_message_past_the_size`).
 . [[webrtc-invariant-16]]*Translation units that disagree on the unsupported
-policy do not link together.* The browser's classes live in an inline
-namespace named after the policy, so a channel passed between two such units
-names two different types. _Held by_ `config_boundary`, which links, and
-`config_mismatch`, which must not.
+policy do not link together.* The classes live, on both targets, in an
+inline namespace named after the policy, so a channel passed between two
+such units names two different types. _Held by_ `config_boundary`, which
+links, and `config_mismatch`, which must not, natively and on emscripten.
 . [[webrtc-invariant-17]]*A native peer and a browser peer connect and
 talk.* A native peer and a peer in headless Chrome, signalled through a relay
 as JSON of the W3C's `RTCSessionDescriptionInit` and `RTCIceCandidateInit`,

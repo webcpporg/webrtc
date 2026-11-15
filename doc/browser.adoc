@@ -91,8 +91,5 @@ settles, and with `invalid_state` when there is none.
 `configuration::bind_address` names the one local address ICE binds to,
 which a browser cannot choose. Under the default policy `make` fails with
 `operation_not_supported`; under `webcpp-webrtc-unsupported=ignore` the
-address is ignored. The browser's classes live in an inline namespace named
-after the policy, `unsupported_error` or `unsupported_ignore`, so their
-spelled names are the same, `webcpp::webrtc::peer_connection` among them, and
-two translation units built with different policies that pass an object
-between them fail to link instead of disagreeing at run time.
+address is ignored, since the browser chooses its addresses itself
+(<<webrtc-building>>).

@@ -16,12 +16,12 @@ What a target cannot honour follows one rule: by default it fails with
 only where the platform does something equivalent of its own. The feature is
 propagated, so a whole program agrees, and setting both
 `WEBCPP_WEBRTC_UNSUPPORTED_ERROR` and `WEBCPP_WEBRTC_UNSUPPORTED_IGNORE`
-stops the build. Natively every setting is honoured but a data channel's
-`max_packet_life_time` of 0, which libdatachannel takes as 0
-retransmissions whatever the policy (below); in the browser the rule
-decides `configuration::bind_address` (<<webrtc-browser-policy>>). A getter
-has no failure to give: where a platform holds an attribute otherwise than
-the W3C says, the table says what the getter returns.
+stops the build. Natively every setting is honoured, but a data channel's
+`max_packet_life_time` of 0, which the rule decides
+(<<webrtc-native-policy>>); in the browser the rule decides
+`configuration::bind_address` (<<webrtc-browser-policy>>). A getter has no
+failure to give: where a platform holds an attribute otherwise than the W3C
+says, the table says what the getter returns, whatever the policy.
 
 [cols="2,3",options="header"]
 |===
@@ -65,14 +65,15 @@ the W3C says, the table says what the getter returns.
   it would refuse them.
 
 | a data channel's `max_packet_life_time` of 0
-| Natively a lifetime of 0 is 0 retransmissions: libdatachannel's C API
-  takes an unreliable channel's limit as a lifetime when it is positive and
-  as a number of retransmissions otherwise, and gives it back the same way.
-  A channel created with a lifetime of 0 is announced to the peer with
-  `max_retransmits` 0, and one the peer announced with a lifetime of 0 reads
-  so too: at both ends `max_packet_life_time()` is empty and
-  `max_retransmits()` is 0, which is what the channel is. In the browser a
-  lifetime of 0 stays one, at both ends.
+| Natively libdatachannel's C API takes an unreliable channel's limit as a
+  lifetime when it is positive and as a number of retransmissions otherwise,
+  and gives it back the same way, so a lifetime of 0 has no form of its own.
+  By default `create_data_channel` fails with `operation_not_supported`; under
+  `webcpp-webrtc-unsupported=ignore` it makes a channel of 0 retransmissions,
+  announced to the peer as one, which both of its ends read as
+  `max_retransmits()` 0 with an empty `max_packet_life_time()`. A channel the
+  peer announced with a lifetime of 0 reads so too, whatever the policy. In
+  the browser a lifetime of 0 stays one, at both ends.
 
 | a text message holding a zero byte, or not UTF-8
 | Natively a zero byte is not sent, `operation_not_supported` whatever the

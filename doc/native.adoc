@@ -60,6 +60,20 @@ built with exceptions does, against the same archives, and gets every error
 as a value (<<webrtc-errors-native,the C API's codes>>). No header of webrtc throws, tries or
 catches.
 
+[#webrtc-native-policy]
+=== What the native target cannot honour
+
+A data channel's `max_packet_life_time` of 0. libdatachannel's C API takes
+an unreliable channel's limit as a lifetime when it is positive and as a
+number of retransmissions otherwise, so a channel created with a lifetime of
+0 would be announced to the peer, a browser among them, as one of 0
+retransmissions. Under the default policy `create_data_channel` fails with
+`operation_not_supported`; under `webcpp-webrtc-unsupported=ignore`
+(<<webrtc-building>>) it makes that channel, the platform's equivalent,
+which both of its ends read as `max_retransmits()` 0. A getter has no
+failure to give, so a channel the peer announced with a lifetime of 0 reads
+as `max_retransmits()` 0 too, whatever the policy.
+
 [#webrtc-native-cost]
 === What reading a message costs
 

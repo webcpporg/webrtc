@@ -195,8 +195,8 @@ void received_before_the_first_receive() {
 }
 
 // A channel's attributes, as created and as announced: each end reads what the creator gave, the
-// accepting end from the peer's announcement, and neither is negotiated. Natively a lifetime of 0
-// is 0 retransmissions, as libdatachannel's C API takes and gives it (the table of differences).
+// accepting end from the peer's announcement, and neither is negotiated. A lifetime of 0, which
+// the native target cannot honour, is native_policy_test.cpp's.
 void attributes_as_created_and_announced() {
     pair p;
     const auto cases = std::to_array<webcpp::test::attribute_case>({
@@ -213,10 +213,6 @@ void attributes_as_created_and_announced() {
         {
             .init = {.protocol = "webcpp.chat.v1"},
             .read = {.label = "protocol", .protocol = "webcpp.chat.v1"},
-        },
-        {
-            .init = {.max_packet_life_time = 0},
-            .read = {.label = "zero lifetime", .max_retransmits = 0},
         },
     });
     webcpp::test::announced_attributes(p, cases);

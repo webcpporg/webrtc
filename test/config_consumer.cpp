@@ -5,8 +5,8 @@
 // https://www.boost.org/LICENSE_1_0.txt)
 
 // The other side of config_provider.cpp's boundary: with the same policy it links, and with the
-// other (WEBCPP_TEST_WEBRTC_MISMATCH) the channel it passes is another type in the browser, and
-// the program does not link (design.md, D14).
+// other (WEBCPP_TEST_WEBRTC_MISMATCH) the channel it passes is another type, natively and in the
+// browser, and the program does not link (design.md, D14).
 #undef WEBCPP_WEBRTC_UNSUPPORTED_IGNORE
 #undef WEBCPP_WEBRTC_UNSUPPORTED_ERROR
 #ifdef WEBCPP_TEST_WEBRTC_MISMATCH

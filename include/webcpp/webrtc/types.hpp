@@ -146,8 +146,9 @@ struct data_channel_init {
     /**
      How long a message may be retransmitted, in milliseconds; exclusive with `max_retransmits`.
 
-     Natively 0 is taken as a `max_retransmits` of 0, as libdatachannel takes it (the table of
-     differences).
+     Natively 0 cannot be honoured: `create_data_channel` fails with `operation_not_supported`,
+     or under `webcpp-webrtc-unsupported=ignore` makes a channel of 0 retransmissions, as
+     libdatachannel takes it (the table of differences).
     */
     std::optional<std::uint16_t> max_packet_life_time{};
     /** How many times a message may be retransmitted; exclusive with `max_packet_life_time`. */

@@ -27,7 +27,13 @@
 #include <string_view>
 #include <vector>
 
+// NOLINTNEXTLINE(modernize-concat-nested-namespaces): the policy selects an inline namespace
 namespace webcpp::webrtc::detail::native {
+#ifdef WEBCPP_WEBRTC_UNSUPPORTED_IGNORE
+inline namespace unsupported_ignore {
+#else
+inline namespace unsupported_error {
+#endif
 
 /** What one attempt to read a message found. */
 enum class read_status {
@@ -574,6 +580,7 @@ private:
     read_result (*read_)(void*, int, const Allocator&) = nullptr;
 };
 
+}  // namespace unsupported_error or unsupported_ignore
 }  // namespace webcpp::webrtc::detail::native
 
 #endif  // WEBCPP_WEBRTC_DETAIL_NATIVE_CHANNEL_HPP

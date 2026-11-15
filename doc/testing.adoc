@@ -97,10 +97,15 @@ include::{library-root}/test/Jamfile[tag=native]
   Each runs with exceptions off too, and in the asyncify variant whatever the
   build asks for, its `_asyncify` twins.
 
+| `native_policy`, `native_policy_ignore`, and their `_no_exceptions` twins
+| A data channel's `max_packet_life_time` of 0 under each policy: refused
+  with `operation_not_supported`, or made with 0 retransmissions, which both
+  of its ends read.
+
 | `browser_policy`, `config_boundary`, `config_mismatch`
 | `bind_address` under each policy, and two translation units with
   different policies that fail to link when they pass a channel between
-  them, with their twins likewise.
+  them, natively and on emscripten, with their twins likewise.
 
 | the `browser` lane
 | Two peers in one page of headless Chrome (`test/browser/`): every native

@@ -36,17 +36,14 @@
 #include <tuple>
 #include <utility>
 
-// In the browser the classes live in an inline namespace named after the unsupported policy, so
-// that translation units that disagree on it name different types and fail to link
-// (design.md, D14); natively, where every setting is honoured, they do not.
+// The classes live in an inline namespace named after the unsupported policy, so that translation
+// units that disagree on it name different types and fail to link (design.md, D14).
 // NOLINTNEXTLINE(modernize-concat-nested-namespaces): the policy selects an inline namespace
 namespace webcpp::webrtc {
-#ifdef WEBCPP_TARGET_EMSCRIPTEN
 #ifdef WEBCPP_WEBRTC_UNSUPPORTED_IGNORE
 inline namespace unsupported_ignore {
 #else
 inline namespace unsupported_error {
-#endif
 #endif
 
 /**
@@ -345,7 +342,8 @@ public:
      @param init How it is created.
      @return The channel; or `error::type_error` for both reliability limits, `negotiated`
      without an `id`, an id of 65535 or a label or protocol past 65,535 bytes;
-     `error::invalid_state` on a closed connection.
+     `error::invalid_state` on a closed connection; natively `operation_not_supported` for a
+     `max_packet_life_time` of 0 under the default policy (the table of differences).
     */
     boost::system::result<data_channel> create_data_channel(std::string_view label,
                                                             const data_channel_init& init = {}) {
@@ -410,9 +408,7 @@ private:
 /** A peer connection on Asio's type-erased executor, in the standard allocator. */
 using peer_connection = basic_peer_connection<>;
 
-#ifdef WEBCPP_TARGET_EMSCRIPTEN
 }  // namespace unsupported_error or unsupported_ignore
-#endif
 }  // namespace webcpp::webrtc
 
 #endif  // WEBCPP_WEBRTC_PEER_CONNECTION_HPP

@@ -34,7 +34,24 @@
 #include <utility>
 #include <vector>
 
+// NOLINTNEXTLINE(modernize-concat-nested-namespaces): the policy selects an inline namespace
 namespace webcpp::webrtc::detail::native {
+#ifdef WEBCPP_WEBRTC_UNSUPPORTED_IGNORE
+inline namespace unsupported_ignore {
+#else
+inline namespace unsupported_error {
+#endif
+
+/**
+ Whether what the native target cannot honour is ignored in this translation unit, rather than
+ failing with `operation_not_supported` (design.md, D14).
+*/
+inline constexpr bool ignore_unsupported =
+#ifdef WEBCPP_WEBRTC_UNSUPPORTED_IGNORE
+    true;
+#else
+    false;
+#endif
 
 /**
  The state of a native peer connection: libdatachannel's connection, by its id in the C API, its
@@ -222,7 +239,12 @@ public:
     /** Waits for the next channel the peer opened. */
     void accept_data_channel(pending<data_channel>& op) { channels_.wait(op); }
 
-    /** Creates a channel, the W3C's `createDataChannel`. */
+    /**
+     Creates a channel, the W3C's `createDataChannel`.
+
+     @return `operation_not_supported` for a `max_packet_life_time` of 0 under the policy that
+     refuses it; the W3C's refusals; nothing once made.
+    */
     boost::system::result<data_channel> create_data_channel(std::string_view label,
                                                             const data_channel_init& init) {
         if (init.max_packet_life_time && init.max_retransmits) {
@@ -236,6 +258,11 @@ public:
         }
         if (closed_) {
             return make_error_code(error::invalid_state);
+        }
+        // The C API takes an unreliable channel's limit of 0 as 0 retransmissions, which a peer
+        // reads as maxRetransmits: a lifetime of 0 has no form of its own there.
+        if (init.max_packet_life_time == 0 && !ignore_unsupported) {
+            return {webcpp::asio::error::operation_not_supported};
         }
         const string_type label_text(label, text_allocator());
         const string_type protocol(init.protocol, text_allocator());
@@ -473,6 +500,7 @@ private:
     std::vector<std::weak_ptr<channel_type>, registry_allocator> registry_;
 };
 
+}  // namespace unsupported_error or unsupported_ignore
 }  // namespace webcpp::webrtc::detail::native
 
 #endif  // WEBCPP_WEBRTC_DETAIL_NATIVE_CONNECTION_HPP

@@ -62,6 +62,22 @@ webcpp.run native_no_exceptions : native_test.cpp
   : <library>/webcpp/webrtc//webrtc <threading>multi <exception-handling>off : native ;
 # end::native[]
 
+# What the native target cannot honour (design.md, D14): a channel's
+# max_packet_life_time of 0 fails create_data_channel with
+# operation_not_supported under the default policy, and is 0 retransmissions
+# under webcpp-webrtc-unsupported=ignore (native_policy_ignore); each with
+# exceptions and without.
+webcpp.run native_policy : native_policy_test.cpp
+  : <library>/webcpp/webrtc//webrtc <threading>multi : native ;
+webcpp.run native_policy_no_exceptions : native_policy_test.cpp
+  : <library>/webcpp/webrtc//webrtc <threading>multi <exception-handling>off : native ;
+webcpp.run native_policy_ignore : native_policy_test.cpp
+  : <library>/webcpp/webrtc//webrtc <threading>multi <webcpp-webrtc-unsupported>ignore
+  : native ;
+webcpp.run native_policy_ignore_no_exceptions : native_policy_test.cpp
+  : <library>/webcpp/webrtc//webrtc <threading>multi <webcpp-webrtc-unsupported>ignore
+    <exception-handling>off : native ;
+
 # Allocation: the object's state, queues and outputs in its allocator, and
 # nothing of it on libdatachannel's threads.
 webcpp.run allocation : allocation_test.cpp
@@ -118,7 +134,9 @@ for local test in $(browser-tests)
 for local suspend in "" _asyncify
 {
     local variant = <webcpp-suspend>asyncify ;
-    if ! $(suspend) { variant = ; }
+    # The boundary holds on both targets; the asyncify twins are emscripten's.
+    local boundary-targets = emscripten ;
+    if ! $(suspend) { variant = ; boundary-targets = native emscripten ; }
     webcpp.run browser_policy_ignore$(suspend) : browser_policy_test.cpp
       : <library>/webcpp/webrtc//webrtc <webcpp-webrtc-unsupported>ignore $(variant)
       : emscripten ;
@@ -126,16 +144,18 @@ for local suspend in "" _asyncify
       : <library>/webcpp/webrtc//webrtc <webcpp-webrtc-unsupported>ignore $(variant)
         <exception-handling>off : emscripten ;
 
-    # Translation units that disagree on the policy name different types in
-    # the browser, so that a channel passed between them fails to link; the
-    # control, which agrees, links and runs (webcpp::beast's D9 test).
+    # Translation units that disagree on the policy name different types, so
+    # that a channel passed between them fails to link; the control, which
+    # agrees, links and runs (webcpp::beast's D9 test).
     webcpp.run config_boundary$(suspend) : config_provider.cpp config_consumer.cpp
-      : <library>/webcpp/webrtc//webrtc $(variant) : emscripten ;
+      : <library>/webcpp/webrtc//webrtc <conditional>@native-threads $(variant)
+      : $(boundary-targets) ;
     webcpp.run config_boundary$(suspend)_no_exceptions : config_provider.cpp config_consumer.cpp
-      : <library>/webcpp/webrtc//webrtc $(variant) <exception-handling>off : emscripten ;
+      : <library>/webcpp/webrtc//webrtc <conditional>@native-threads $(variant)
+        <exception-handling>off : $(boundary-targets) ;
     webcpp.link-fail config_mismatch$(suspend) : config_provider.cpp config_consumer.cpp
-      : <library>/webcpp/webrtc//webrtc <define>WEBCPP_TEST_WEBRTC_MISMATCH $(variant)
-      : emscripten ;
+      : <library>/webcpp/webrtc//webrtc <conditional>@native-threads
+        <define>WEBCPP_TEST_WEBRTC_MISMATCH $(variant) : $(boundary-targets) ;
 }
 
 # The browser lane: two peers in one page of headless Chrome, both suspension
