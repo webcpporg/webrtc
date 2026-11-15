@@ -139,7 +139,7 @@ void the_bound_keeps_a_place_for_the_end() {
     std::function<void()> next;
     next = [&] {
         queue.wait(webrtc::detail::make_operation(
-            [&](error_code ec, candidate c) {
+            [&](error_code ec, const candidate& c) {
                 if (ec) {
                     return;
                 }
