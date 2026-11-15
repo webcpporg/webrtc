@@ -114,7 +114,7 @@ public:
      @param supported The cancellation types the operation honours; none installs no handler.
      @return The operation, which frees itself when it ends.
     */
-    static operation& make(Handler handler, const IoExecutor& executor,
+    static operation& make(Handler&& handler, const IoExecutor& executor,
                            std::tuple<Values...> fallback,
                            webcpp::asio::cancellation_type supported) {
         allocator_type allocator(webcpp::asio::get_associated_allocator(handler));
