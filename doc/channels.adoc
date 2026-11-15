@@ -28,10 +28,51 @@ protocol past 65,535 bytes fail with `type_error`; a closed connection with
 `invalid_state`.
 
 A channel is movable and not copyable; it belongs to whoever holds it, and
-its executor's context outlives it. `ready_state()`, `label()`, `id()` and
-`buffered_amount()` read what the W3C's attributes of the same names read.
-`async_wait_open` completes once the channel is open, at once when it already
-is, and with `error::closed` when it closed before it opened.
+its executor's context outlives it. `ready_state()`, `id()` and
+`buffered_amount()` read what the W3C's attributes of the same names read,
+as the channel opens, sends and closes; what it was created with never
+changes (<<webrtc-channels-attributes>>). `async_wait_open` completes once
+the channel is open, at once when it already is, and with `error::closed`
+when it closed before it opened.
+
+[#webrtc-channels-attributes]
+=== A channel's attributes
+
+`label()`, `ordered()`, `max_packet_life_time()`, `max_retransmits()`,
+`protocol()` and `negotiated()` read the W3C's attributes of the same names,
+what the channel was created with. A channel the program created reads its
+`data_channel_init`; one it accepted reads what the peer announced when it
+opened the channel, so both ends read the same, but for `negotiated()`,
+false at the accepting end since a negotiated channel is never announced.
+Each is read once, when the channel is made, and costs nothing afterwards;
+`label()` and `protocol()` are views of text in the channel's allocator,
+valid while the channel lives.
+
+Here a channel's messages may arrive out of order, each retransmitted three
+times at most, for a subprotocol of the program's:
+
+[source]
+----
+include::{examples}/webrtc_attributes.cpp[tag=create,indent=0]
+----
+
+Each end reads it the same way:
+
+[source]
+----
+include::{examples}/webrtc_attributes.cpp[tag=read,indent=0]
+----
+
+and the end the peer accepted reads what the creator announced:
+
+[listing]
+----
+include::{examples}/webrtc_attributes.expected[]
+----
+
+Natively a `max_packet_life_time` of 0 reads as a `max_retransmits` of 0, at
+both ends, since libdatachannel takes and gives it so
+(<<webrtc-differences>>).
 
 [#webrtc-channels-receiving]
 === Receiving

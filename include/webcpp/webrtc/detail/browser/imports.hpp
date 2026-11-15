@@ -296,6 +296,31 @@ inline emscripten::EM_VAL webcpp_webrtc_label(emscripten::EM_VAL channel) {
     }
     }), channel));
 }
+// A channel's attributes, which never change: {ordered, maxPacketLifeTime, maxRetransmits,
+// protocol, negotiated}, a limit -1 for none; each the W3C's default for one it cannot read.
+inline emscripten::EM_VAL webcpp_webrtc_channel_attributes(emscripten::EM_VAL channel) {
+    return reinterpret_cast<emscripten::EM_VAL>(EM_ASM_PTR(({
+    const channel = $0;
+
+    const target = Emval.toValue(channel);
+    const read = (name, fallback) => {
+        try {
+            return target[name];
+        } catch (_) {
+            return fallback;
+        }
+    };
+    const limit = value => Number.isInteger(value) && value >= 0 && value <= 65535 ? value : -1;
+    const protocol = read('protocol', "");
+    return Emval.toHandle({
+        ordered: read('ordered', true) !== false,
+        maxPacketLifeTime: limit(read('maxPacketLifeTime', null)),
+        maxRetransmits: limit(read('maxRetransmits', null)),
+        protocol: typeof protocol === 'string' ? protocol : "",
+        negotiated: read('negotiated', false) === true,
+    });
+    }), channel));
+}
 // The largest message the connection's SCTP transport sends, maxMessageSize; 0 while it has none
 // or for one it cannot read, and Infinity for no limit.
 inline double webcpp_webrtc_peer_max_message_size(emscripten::EM_VAL pc) {

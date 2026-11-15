@@ -5,11 +5,12 @@
 // https://www.boost.org/LICENSE_1_0.txt)
 
 // Two native peers in one process over the loopback, through libdatachannel's C API: the
-// exchange, the channel's messages both ways, the cases the semantics name, and the errors. The
-// Jamfile builds it as the build asks and without exceptions.
+// exchange, the channel's messages both ways, the cases the semantics name, a channel's attributes,
+// and the errors. The Jamfile builds it as the build asks and without exceptions.
 
 #include <webcpp/webrtc.hpp>
 
+#include "attributes.hpp"
 #include "pair.hpp"
 #include "require.hpp"
 
@@ -193,16 +194,58 @@ void received_before_the_first_receive() {
     BOOST_TEST((got == std::vector<std::string>{"one", "two", "three"}));
 }
 
-// A negotiated channel: both peers make it with one id, and neither accepts it.
+// A channel's attributes, as created and as announced: each end reads what the creator gave, the
+// accepting end from the peer's announcement, and neither is negotiated. Natively a lifetime of 0
+// is 0 retransmissions, as libdatachannel's C API takes and gives it (the table of differences).
+void attributes_as_created_and_announced() {
+    pair p;
+    const auto cases = std::to_array<webcpp::test::attribute_case>({
+        {.read = {.label = "reliable"}},
+        {.init = {.ordered = false}, .read = {.label = "unordered", .ordered = false}},
+        {
+            .init = {.ordered = false, .max_packet_life_time = 150},
+            .read = {.label = "lifetime", .ordered = false, .max_packet_life_time = 150},
+        },
+        {
+            .init = {.max_retransmits = 3},
+            .read = {.label = "retransmits", .max_retransmits = 3},
+        },
+        {
+            .init = {.protocol = "webcpp.chat.v1"},
+            .read = {.label = "protocol", .protocol = "webcpp.chat.v1"},
+        },
+        {
+            .init = {.max_packet_life_time = 0},
+            .read = {.label = "zero lifetime", .max_retransmits = 0},
+        },
+    });
+    webcpp::test::announced_attributes(p, cases);
+}
+
+// A negotiated channel: both peers make it with one id, and neither accepts it; each end reads
+// the attributes it was made with, negotiated among them.
 void a_negotiated_channel() {
     pair p;
     webrtc::data_channel_init init;
+    init.ordered = false;
+    init.max_retransmits = 2;
+    init.protocol = "negotiated.v1";
     init.negotiated = true;
     init.id = 7;
     auto ca = p.a->create_data_channel("x", init);
     auto cb = p.b->create_data_channel("x", init);
     webcpp::test::require(BOOST_TEST(ca.has_value()));
     webcpp::test::require(BOOST_TEST(cb.has_value()));
+    const webcpp::test::attributes made{
+        .label = "x",
+        .ordered = false,
+        .max_packet_life_time = std::nullopt,
+        .max_retransmits = 2,
+        .protocol = "negotiated.v1",
+        .negotiated = true,
+    };
+    BOOST_TEST_EQ(webcpp::test::attributes_of(*ca), made);
+    BOOST_TEST_EQ(webcpp::test::attributes_of(*cb), made);
     asio::cancellation_signal stop_accepting;
     std::optional<error_code> accepted;
     p.b->async_accept_data_channel(asio::bind_cancellation_slot(
@@ -476,6 +519,7 @@ void run_returns_once_closed() {
 int main() {
     a_full_exchange();
     received_before_the_first_receive();
+    attributes_as_created_and_announced();
     a_negotiated_channel();
     errors_as_values();
     bounds();

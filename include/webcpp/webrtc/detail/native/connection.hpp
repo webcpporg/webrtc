@@ -258,7 +258,7 @@ public:
         if (dc < 0) {
             return code_of(dc, error::operation_error, error::operation_error);
         }
-        return channel_access::make<data_channel>(adopt(dc));
+        return channel_access::make<data_channel>(adopt(dc, init.negotiated));
     }
 
     /** The local description, once one was set. */
@@ -421,14 +421,15 @@ private:
             rtcDeleteDataChannel(dc);
             return;
         }
-        // Past the backlog, the refused channel is destroyed here, which closes it.
-        static_cast<void>(channels_.push(channel_access::make<data_channel>(adopt(dc))));
+        // Past the backlog, the refused channel is destroyed here, which closes it. A channel the
+        // peer announced is never a negotiated one.
+        static_cast<void>(channels_.push(channel_access::make<data_channel>(adopt(dc, false))));
     }
 
-    std::shared_ptr<channel_type> adopt(int dc) {
+    std::shared_ptr<channel_type> adopt(int dc, bool negotiated) {
         auto channel =
             std::allocate_shared<channel_type>(allocator_, executor_, allocator_, options_);
-        channel->attach(dc);
+        channel->attach(dc, negotiated);
         std::erase_if(registry_, [](const auto& weak) { return weak.expired(); });
         registry_.push_back(channel);
         return channel;

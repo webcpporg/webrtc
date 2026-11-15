@@ -1,0 +1,7 @@
+                      created   accepted
+label                 chat      chat
+ordered               false     false
+max_packet_life_time  none      none
+max_retransmits       3         3
+protocol              chat.v1   chat.v1
+negotiated            false     false

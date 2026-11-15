@@ -21,9 +21,12 @@
 
 #include <atomic>
 #include <cstddef>
+#include <iterator>
+#include <map>
 #include <memory_resource>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <thread>
 
 namespace webrtc = webcpp::webrtc;
@@ -33,22 +36,37 @@ using webrtc::detail::error_code;
 namespace {
 
 // Counts what it gives, and what it gives on a thread other than the one that made it, which is
-// the thread that runs the io_context.
+// the thread that runs the io_context; and keeps the blocks it gave on that thread, which is the
+// only one that asks whether it gave one.
 class counting_resource final : public std::pmr::memory_resource {
 public:
     std::atomic<std::size_t> allocations{0};
     std::atomic<std::size_t> foreign{0};
 
+    // Whether `p` points into a block it gave and that was not given back.
+    [[nodiscard]] bool gave(const void* p) const {
+        const auto* address = static_cast<const std::byte*>(p);
+        const auto after = blocks_.upper_bound(address);
+        return after != blocks_.begin() &&
+               address < std::prev(after)->first + std::prev(after)->second;
+    }
+
 private:
     void* do_allocate(std::size_t bytes, std::size_t alignment) override {
         ++allocations;
+        void* const p = std::pmr::new_delete_resource()->allocate(bytes, alignment);
         if (std::this_thread::get_id() != owner_) {  // lint-world: which thread allocates
             ++foreign;
+        } else {
+            blocks_.emplace(static_cast<const std::byte*>(p), bytes);
         }
-        return std::pmr::new_delete_resource()->allocate(bytes, alignment);
+        return p;
     }
 
     void do_deallocate(void* p, std::size_t bytes, std::size_t alignment) override {
+        if (std::this_thread::get_id() == owner_) {  // lint-world: which thread gives back
+            blocks_.erase(static_cast<const std::byte*>(p));
+        }
         std::pmr::new_delete_resource()->deallocate(p, bytes, alignment);
     }
 
@@ -57,7 +75,15 @@ private:
     }
 
     std::thread::id owner_ = std::this_thread::get_id();  // lint-world: which thread allocates
+    std::map<const std::byte*, std::size_t> blocks_;
 };
+
+// Checks that `text` reads `expected`, from a block `resource` gave.
+void in_the_allocator(const counting_resource& resource, std::string_view text,
+                      std::string_view expected) {
+    BOOST_TEST_EQ(text, expected);
+    BOOST_TEST(resource.gave(text.data()));
+}
 
 using allocator = std::pmr::polymorphic_allocator<std::byte>;
 using connection = webrtc::basic_peer_connection<asio::any_io_executor, allocator>;
@@ -79,8 +105,11 @@ void state_queues_and_outputs_in_the_allocator() {
 
     webcpp::test::trickle<connection> ab(*first, *second);
     webcpp::test::trickle<connection> ba(*second, *first);
-    auto created = first->create_data_channel("allocated");
+    // A protocol longer than a string holds in place, so that both ends allocate its text.
+    const std::string_view protocol = "webcpp.allocation.a-protocol-held-in-the-allocator";
+    auto created = first->create_data_channel("allocated", {.protocol = protocol});
     webcpp::test::require(BOOST_TEST(created.has_value()));
+    in_the_allocator(resource, created->protocol(), protocol);
     std::optional<channel> remote;
     std::string text;
     auto buffer = asio::dynamic_buffer(text);
@@ -95,6 +124,7 @@ void state_queues_and_outputs_in_the_allocator() {
         }
         remote.emplace(std::move(c));
         BOOST_TEST(remote->label() == "allocated");
+        in_the_allocator(resource, remote->protocol(), protocol);
         remote->async_receive(buffer, [&](error_code ec, std::size_t n, bool) {
             BOOST_TEST(!ec);
             received = n;

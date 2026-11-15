@@ -21,6 +21,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string_view>
@@ -155,6 +156,7 @@ public:
         : executor_(executor),
           allocator_(allocator),
           label_(typename string_type::allocator_type(allocator)),
+          protocol_(typename string_type::allocator_type(allocator)),
           inbox_{{}, executor},
           max_message_size_(opts.max_message_size),
           max_buffered_amount_(opts.max_buffered_amount) {}
@@ -175,10 +177,12 @@ public:
     ~channel_state() { destroy(); }
 
     /**
-     Takes over libdatachannel's channel `dc`: its user pointer, its callbacks, its label and the
-     state it is in already, since it may have opened, or closed, before.
+     Takes over libdatachannel's channel `dc`: its user pointer, its callbacks, its label, its
+     attributes, which libdatachannel holds from its creation, the peer's announcement included,
+     and the state it is in already, since it may have opened, or closed, before. `negotiated`
+     says whether the program created it negotiated, which the C API does not say.
     */
-    void attach(int dc) {
+    void attach(int dc, bool negotiated) {
         dc_ = dc;
         inbox_.self = this->weak_from_this();
         rtcSetUserPointer(dc_, &inbox_);
@@ -187,6 +191,9 @@ public:
         rtcSetBufferedAmountLowCallback(dc_, &on_buffered_amount_low);
         rtcSetAvailableCallback(dc_, &on_available);
         static_cast<void>(read_text(&rtcGetDataChannelLabel, dc_, label_));
+        static_cast<void>(read_text(&rtcGetDataChannelProtocol, dc_, protocol_));
+        read_reliability();
+        negotiated_ = negotiated;
         if (rtcIsClosed(dc_)) {
             ready_ = data_channel_state::closed;
         } else if (rtcIsOpen(dc_)) {
@@ -337,6 +344,25 @@ public:
         return static_cast<std::uint16_t>(stream);
     }
 
+    /** Whether the channel delivers its messages in order. */
+    [[nodiscard]] bool ordered() const noexcept { return ordered_; }
+
+    /** How long the channel retransmits a message, when it has that limit. */
+    [[nodiscard]] std::optional<std::uint16_t> max_packet_life_time() const noexcept {
+        return max_packet_life_time_;
+    }
+
+    /** How many times the channel retransmits a message, when it has that limit. */
+    [[nodiscard]] std::optional<std::uint16_t> max_retransmits() const noexcept {
+        return max_retransmits_;
+    }
+
+    /** The channel's subprotocol. */
+    [[nodiscard]] std::string_view protocol() const noexcept { return protocol_; }
+
+    /** Whether the program negotiated the channel itself. */
+    [[nodiscard]] bool negotiated() const noexcept { return negotiated_; }
+
     /**
      Closes the channel by its owner: what waits ends with `operation_aborted`, but
      `async_wait_close`, and unread messages are discarded, as the W3C discards a message
@@ -451,6 +477,29 @@ private:
         }
     }
 
+    // The order and the limit libdatachannel holds. The C API gives an unreliable channel's limit
+    // as it takes one: a positive lifetime, else a number of retransmissions, so that a lifetime
+    // of 0 reads as 0 retransmissions (the table of differences); a peer announces 32 bits, which
+    // the W3C's unsigned short holds up to 65,535.
+    void read_reliability() {
+        rtcReliability reliability{};
+        if (rtcGetDataChannelReliability(dc_, &reliability) != RTC_ERR_SUCCESS) {
+            return;
+        }
+        ordered_ = !reliability.unordered;
+        if (!reliability.unreliable) {
+            return;
+        }
+        const auto limit = [](unsigned int value) {
+            return static_cast<std::uint16_t>(std::min(value, 65535U));
+        };
+        if (reliability.maxPacketLifeTime > 0) {
+            max_packet_life_time_ = limit(reliability.maxPacketLifeTime);
+        } else {
+            max_retransmits_ = limit(reliability.maxRetransmits);
+        }
+    }
+
     void buffered_amount_low() {
         if (low_ != nullptr && buffered_amount() <= threshold_) {
             low_->complete({});
@@ -506,9 +555,14 @@ private:
     Executor executor_;
     Allocator allocator_;
     string_type label_;
+    string_type protocol_;
     inbox inbox_;
     int dc_ = -1;
     data_channel_state ready_ = data_channel_state::connecting;
+    std::optional<std::uint16_t> max_packet_life_time_;
+    std::optional<std::uint16_t> max_retransmits_;
+    bool ordered_ = true;
+    bool negotiated_ = false;
     std::size_t max_message_size_ = 0;
     std::size_t max_buffered_amount_ = 0;
     std::size_t threshold_ = 0;

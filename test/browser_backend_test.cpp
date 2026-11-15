@@ -10,10 +10,10 @@
 // browser lane's. The connection: states coalesce, candidates come in order with their members and
 // the end of gathering once, the promises' settlements complete the description operations and
 // their rejections arrive by name, and close() aborts what waits, delivers no state change and
-// closes the channels. The channel: its refusals to send leave it open, the buffered-amount wait,
-// messages kept before the first receive, a message past max_message_size and the receive budget
-// close it, its owner's close, the peer's close, and a channel accepted after its messages
-// arrived, past the backlog closed at once.
+// closes the channels. The channel: its attributes, as created and as announced, its refusals to
+// send leave it open, the buffered-amount wait, messages kept before the first receive, a message
+// past max_message_size and the receive budget close it, its owner's close, the peer's close, and
+// a channel accepted after its messages arrived, past the backlog closed at once.
 
 #include <webcpp/webrtc/data_channel.hpp>
 #include <webcpp/webrtc/peer_connection.hpp>
@@ -34,6 +34,7 @@
 #include <array>
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <memory>
 #include <optional>
@@ -48,13 +49,19 @@ using emscripten::val;
 
 // clang-format off
 // The test's RTCPeerConnection, which keeps every instance in `connections`, and its
-// RTCDataChannel; `fire(target, handler, event)` calls a handler as the browser would, and
-// `holding` keeps the connection's promises unsettled until `releaseHeld()`.
+// RTCDataChannel, whose attributes are those of its RTCDataChannelInit, as a browser's are;
+// `fire(target, handler, event)` calls a handler as the browser would, and `holding` keeps the
+// connection's promises unsettled until `releaseHeld()`.
 EM_JS(void, test_install_fakes, (), {
     class FakeChannel {
         constructor(label, init) {
             this.label = label;
             this.init = init;
+            this.ordered = init?.ordered ?? true;
+            this.maxPacketLifeTime = init?.maxPacketLifeTime ?? null;
+            this.maxRetransmits = init?.maxRetransmits ?? null;
+            this.protocol = init?.protocol ?? "";
+            this.negotiated = init?.negotiated ?? false;
             this.readyState = 'connecting';
             this.bufferedAmount = 0;
             this.bufferedAmountLowThreshold = 0;
@@ -434,6 +441,68 @@ void cancelled_promises() {
     BOOST_TEST((results[3] == std::vector<error_code>{error_code{}}));
     BOOST_TEST(pc.has_remote_description());
     BOOST_TEST(pc.local_description().has_value());
+}
+
+// A channel's attributes are the browser's: a created channel's are those it was created with,
+// and an accepted channel's those the peer announced, never negotiated.
+void a_channels_attributes() {
+    asio::io_context io;
+    webrtc::runtime rt;
+    auto made = connection::make(rt, io.get_executor(), no_servers);
+    if (!BOOST_TEST(made.has_value())) {
+        return;
+    }
+    connection& pc = *made;
+    const webrtc::data_channel_init made_with{
+        .ordered = false,
+        .max_packet_life_time = std::nullopt,
+        .max_retransmits = 4,
+        .protocol = "made.v1",
+        .negotiated = true,
+        .id = 9,
+    };
+    auto created = pc.create_data_channel("made", made_with);
+    if (!BOOST_TEST(created.has_value())) {
+        return;
+    }
+    BOOST_TEST(!created->ordered());
+    BOOST_TEST(!created->max_packet_life_time());
+    BOOST_TEST(created->max_retransmits() == std::optional<std::uint16_t>(4));
+    BOOST_TEST_EQ(created->protocol(), "made.v1");
+    BOOST_TEST(created->negotiated());
+    auto reliable = pc.create_data_channel("reliable");
+    if (!BOOST_TEST(reliable.has_value())) {
+        return;
+    }
+    BOOST_TEST(reliable->ordered());
+    BOOST_TEST(!reliable->max_packet_life_time());
+    BOOST_TEST(!reliable->max_retransmits());
+    BOOST_TEST(reliable->protocol().empty());
+    BOOST_TEST(!reliable->negotiated());
+
+    val init = val::object();
+    init.set("ordered", val(false));
+    init.set("maxPacketLifeTime", val(250));
+    init.set("protocol", val("announced.v1"));
+    val incoming = val::global("FakeChannel").new_(val("incoming"), init);
+    incoming.set("readyState", val("open"));
+    val announced = val::object();
+    announced.set("channel", incoming);
+    fire(last_connection(), "ondatachannel", announced);
+    std::optional<channel> accepted;
+    pc.async_accept_data_channel([&](error_code ec, channel c) {
+        BOOST_TEST(!ec);
+        accepted.emplace(std::move(c));
+    });
+    settle(io);
+    if (!BOOST_TEST(accepted.has_value())) {
+        return;
+    }
+    BOOST_TEST(!accepted->ordered());
+    BOOST_TEST(accepted->max_packet_life_time() == std::optional<std::uint16_t>(250));
+    BOOST_TEST(!accepted->max_retransmits());
+    BOOST_TEST_EQ(accepted->protocol(), "announced.v1");
+    BOOST_TEST(!accepted->negotiated());
 }
 
 // A send is refused, and the channel stays open, when it is not open, past max_message_size or
@@ -865,6 +934,7 @@ int main() {
     arrivals_keep_their_order();
     a_close_while_a_notification_is_in_flight();
     cancelled_promises();
+    a_channels_attributes();
     sends_and_their_refusals();
     messages_and_the_buffer();
     the_budget_or_the_size(false);

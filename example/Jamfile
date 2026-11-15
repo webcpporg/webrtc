@@ -17,4 +17,5 @@ webcpp.targets native ;
 webcpp.example webrtc_quick_start.cpp : : native ;
 webcpp.example webrtc_signalling.cpp : : native ;
 webcpp.example webrtc_pacing.cpp : : native ;
+webcpp.example webrtc_attributes.cpp : : native ;
 webcpp.example webrtc_errors.cpp : : native ;

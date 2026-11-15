@@ -89,8 +89,9 @@ EM_JS(void, test_install_objects, (), {
     };
     globalThis.sink = {sent: [], send(data) { this.sent.push(data); }};
     globalThis.unreadable = {};
-    for (const property of ['readyState', 'bufferedAmount', 'id', 'label', 'sctp',
-                            'remoteDescription', 'localDescription']) {
+    for (const property of ['readyState', 'bufferedAmount', 'id', 'label', 'ordered',
+                            'maxPacketLifeTime', 'maxRetransmits', 'protocol', 'negotiated',
+                            'sctp', 'remoteDescription', 'localDescription']) {
         Object.defineProperty(unreadable, property, {get() { throwing('OperationError'); }});
     }
     globalThis.testBuffer = new Uint8Array([1, 2, 0, 255]).buffer;
@@ -372,6 +373,13 @@ void reads_give_their_default() {
     BOOST_TEST_EQ(webcpp_webrtc_buffered_amount(object.as_handle()), 0.0);
     BOOST_TEST_EQ(webcpp_webrtc_channel_id(object.as_handle()), -1);
     BOOST_TEST(browser::take(webcpp_webrtc_label(object.as_handle())).strictlyEquals(val("")));
+    // A channel's attributes that cannot be read are the W3C's defaults, a limit -1 for none.
+    const val attributes = browser::take(webcpp_webrtc_channel_attributes(object.as_handle()));
+    BOOST_TEST(attributes["ordered"].strictlyEquals(val(true)));
+    BOOST_TEST(attributes["maxPacketLifeTime"].strictlyEquals(val(-1)));
+    BOOST_TEST(attributes["maxRetransmits"].strictlyEquals(val(-1)));
+    BOOST_TEST(attributes["protocol"].strictlyEquals(val("")));
+    BOOST_TEST(attributes["negotiated"].strictlyEquals(val(false)));
     BOOST_TEST_EQ(webcpp_webrtc_peer_max_message_size(object.as_handle()), 0.0);
     BOOST_TEST(!webcpp_webrtc_has_remote(object.as_handle()));
     BOOST_TEST(browser::take(webcpp_webrtc_local_description(object.as_handle())).isNull());

@@ -24,9 +24,12 @@
 #include <boost/core/lightweight_test.hpp>
 
 #include <cstddef>
+#include <iterator>
+#include <map>
 #include <memory_resource>
 #include <optional>
 #include <string>
+#include <string_view>
 
 namespace webrtc = webcpp::webrtc;
 namespace asio = webcpp::asio;
@@ -34,28 +37,49 @@ using webrtc::detail::error_code;
 
 namespace {
 
-// Counts what it gives and what is still out. A page has one thread, so plain counters do.
+// Counts what it gives and what is still out, and keeps the blocks it gave. A page has one thread,
+// so plain counters do.
 class counting_resource final : public std::pmr::memory_resource {
 public:
     std::size_t allocations = 0;
     std::size_t live = 0;
 
+    // Whether `p` points into a block it gave and that was not given back.
+    [[nodiscard]] bool gave(const void* p) const {
+        const auto* address = static_cast<const std::byte*>(p);
+        const auto after = blocks_.upper_bound(address);
+        return after != blocks_.begin() &&
+               address < std::prev(after)->first + std::prev(after)->second;
+    }
+
 private:
     void* do_allocate(std::size_t bytes, std::size_t alignment) override {
         ++allocations;
         live += bytes;
-        return std::pmr::new_delete_resource()->allocate(bytes, alignment);
+        void* const p = std::pmr::new_delete_resource()->allocate(bytes, alignment);
+        blocks_.emplace(static_cast<const std::byte*>(p), bytes);
+        return p;
     }
 
     void do_deallocate(void* p, std::size_t bytes, std::size_t alignment) override {
         live -= bytes;
+        blocks_.erase(static_cast<const std::byte*>(p));
         std::pmr::new_delete_resource()->deallocate(p, bytes, alignment);
     }
 
     [[nodiscard]] bool do_is_equal(const std::pmr::memory_resource& other) const noexcept override {
         return this == &other;
     }
+
+    std::map<const std::byte*, std::size_t> blocks_;
 };
+
+// Checks that `text` reads `expected`, from a block `resource` gave.
+void in_the_allocator(const counting_resource& resource, std::string_view text,
+                      std::string_view expected) {
+    BOOST_TEST_EQ(text, expected);
+    BOOST_TEST(resource.gave(text.data()));
+}
 
 using allocator = std::pmr::polymorphic_allocator<std::byte>;
 using connection = webrtc::basic_peer_connection<asio::any_io_executor, allocator>;
@@ -78,8 +102,11 @@ void state_queues_and_outputs_in_the_allocator() {
 
         webcpp::test::trickle<connection> ab(*first, *second);
         webcpp::test::trickle<connection> ba(*second, *first);
-        auto created = first->create_data_channel("allocated");
+        // A protocol longer than a string holds in place, so that both ends allocate its text.
+        const std::string_view protocol = "webcpp.allocation.a-protocol-held-in-the-allocator";
+        auto created = first->create_data_channel("allocated", {.protocol = protocol});
         webcpp::test::require(BOOST_TEST(created.has_value()));
+        in_the_allocator(resource, created->protocol(), protocol);
         std::optional<channel> remote;
         std::string text;
         auto buffer = asio::dynamic_buffer(text);
@@ -101,6 +128,7 @@ void state_queues_and_outputs_in_the_allocator() {
             }
             remote.emplace(std::move(c));
             BOOST_TEST(remote->label() == "allocated");
+            in_the_allocator(resource, remote->protocol(), protocol);
             remote->async_receive(buffer, [&](error_code ec, std::size_t n, bool) {
                 BOOST_TEST(!ec);
                 received = n;

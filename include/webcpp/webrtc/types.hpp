@@ -145,6 +145,9 @@ struct data_channel_init {
     bool ordered = true;
     /**
      How long a message may be retransmitted, in milliseconds; exclusive with `max_retransmits`.
+
+     Natively 0 is taken as a `max_retransmits` of 0, as libdatachannel takes it (the table of
+     differences).
     */
     std::optional<std::uint16_t> max_packet_life_time{};
     /** How many times a message may be retransmitted; exclusive with `max_packet_life_time`. */

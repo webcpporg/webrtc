@@ -66,7 +66,7 @@ class basic_peer_connection;
  copyable, and its executor's context outlives it.
 
  @tparam Executor The executor its handlers run on.
- @tparam Allocator The allocator of its state, its queues and its label.
+ @tparam Allocator The allocator of its state, its queues, its label and its protocol.
 */
 template <class Executor = webcpp::asio::any_io_executor,
           class Allocator = std::allocator<std::byte>>
@@ -317,6 +317,53 @@ public:
      @return The id, or nothing before the transport gave it one.
     */
     [[nodiscard]] std::optional<std::uint16_t> id() const { return state_->id(); }
+
+    /**
+     Whether the channel delivers its messages in the order they were sent, the W3C's `ordered`.
+
+     @return What `data_channel_init::ordered` said when the channel was created, by this program
+     or, for a channel it accepted, by the peer, which announced it.
+    */
+    [[nodiscard]] bool ordered() const noexcept { return state_->ordered(); }
+
+    /**
+     How long the channel retransmits a message, in milliseconds, the W3C's `maxPacketLifeTime`.
+
+     @return The limit the channel was created with, by this program or by the peer, or nothing
+     for a channel without one. Natively a limit of 0 is `max_retransmits()` 0, as libdatachannel
+     takes and gives it (the table of differences), and a peer's limit past 65,535 reads as
+     65,535.
+    */
+    [[nodiscard]] std::optional<std::uint16_t> max_packet_life_time() const noexcept {
+        return state_->max_packet_life_time();
+    }
+
+    /**
+     How many times the channel retransmits a message, the W3C's `maxRetransmits`.
+
+     @return The limit the channel was created with, by this program or by the peer, or nothing
+     for a channel without one. Natively a peer's limit past 65,535 reads as 65,535.
+    */
+    [[nodiscard]] std::optional<std::uint16_t> max_retransmits() const noexcept {
+        return state_->max_retransmits();
+    }
+
+    /**
+     The channel's subprotocol, the W3C's `protocol`.
+
+     @return A view of the name the channel was created with, by this program or by the peer, in
+     the object's allocator, valid while the channel lives; empty for none.
+    */
+    [[nodiscard]] std::string_view protocol() const noexcept { return state_->protocol(); }
+
+    /**
+     Whether the program negotiated the channel itself, the W3C's `negotiated`.
+
+     @return True for a channel created with `data_channel_init::negotiated`, which both peers
+     create with one id; false for any other, and for every channel accepted from the peer, since
+     a negotiated channel is never announced.
+    */
+    [[nodiscard]] bool negotiated() const noexcept { return state_->negotiated(); }
 
     /**
      Closes the channel: its pending operations complete with `operation_aborted`, but

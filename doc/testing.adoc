@@ -62,14 +62,16 @@ include::{library-root}/test/Jamfile[tag=native]
 
 | `native`, `native_no_exceptions`
 | Two peers on the loopback: a full exchange, messages received before the
-  first read, a negotiated channel, errors as values, the bounds, `close`,
-  a channel closed by its owner, destruction and moves, and `run()`
-  returning once closed.
+  first read, a channel's attributes as created and as announced, a
+  negotiated channel, errors as values, the bounds, `close`, a channel
+  closed by its owner, destruction and moves, and `run()` returning once
+  closed.
 
 | `allocation`
 | A connection pair over a polymorphic allocator on a counting resource:
-  the state, the queues and the outputs allocate there, and nothing of it on
-  another thread than the one that runs the `io_context`.
+  the state, a channel's protocol at both ends among it, the queues and the
+  outputs allocate there, and nothing of it on another thread than the one
+  that runs the `io_context`.
 
 | `lifetime`
 | Connections and channels destroyed while the peer floods them, repeated,
@@ -88,9 +90,10 @@ include::{library-root}/test/Jamfile[tag=native]
   calls catch what JavaScript throws and report it by name, never
   re-entering {cpp}, and texts cross whole; the census and the cap, a slot
   freed once a connection is collected; and the browser implementation's
-  semantics over a fake connection and channel of the test's own, the order
-  of arrivals of different kinds, cancellation, a close with a notification
-  in flight, and the `io_context` destroyed while handlers own the objects.
+  semantics over a fake connection and channel of the test's own, a
+  channel's attributes, the order of arrivals of different kinds,
+  cancellation, a close with a notification in flight, and the `io_context`
+  destroyed while handlers own the objects.
   Each runs with exceptions off too, and in the asyncify variant whatever the
   build asks for, its `_asyncify` twins.
 

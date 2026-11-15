@@ -97,6 +97,7 @@ public:
         : executor_(std::move(executor)),
           allocator_(allocator),
           label_(typename string_type::allocator_type(allocator)),
+          protocol_(typename string_type::allocator_type(allocator)),
           connection_(std::move(connection)),
           messages_(messages_allocator(allocator)),
           max_message_size_(opts.max_message_size),
@@ -120,7 +121,8 @@ public:
 
     /**
      Takes over the browser's channel: registers with the bridge, sets the handlers of its events,
-     and reads its label and the state it is in already, since it may have opened, or closed.
+     and reads its label, its attributes, which never change, and the state it is in already,
+     since it may have opened, or closed.
     */
     void attach(emscripten::val channel) {
         channel_ = std::move(channel);
@@ -136,6 +138,7 @@ public:
             ready_ = live_state();
         }
         js_copy(take(webcpp_webrtc_label(channel_.as_handle())), label_);
+        read_attributes();
     }
 
     /** The object's executor. */
@@ -276,6 +279,25 @@ public:
         return static_cast<std::uint16_t>(stream);
     }
 
+    /** Whether the channel delivers its messages in order. */
+    [[nodiscard]] bool ordered() const noexcept { return ordered_; }
+
+    /** How long the channel retransmits a message, when it has that limit. */
+    [[nodiscard]] std::optional<std::uint16_t> max_packet_life_time() const noexcept {
+        return max_packet_life_time_;
+    }
+
+    /** How many times the channel retransmits a message, when it has that limit. */
+    [[nodiscard]] std::optional<std::uint16_t> max_retransmits() const noexcept {
+        return max_retransmits_;
+    }
+
+    /** The channel's subprotocol. */
+    [[nodiscard]] std::string_view protocol() const noexcept { return protocol_; }
+
+    /** Whether the program negotiated the channel itself. */
+    [[nodiscard]] bool negotiated() const noexcept { return negotiated_; }
+
     /**
      Closes the channel by its owner: what waits ends with `operation_aborted`, but
      `async_wait_close`, which completes once the browser closed it, and unread messages are
@@ -405,6 +427,23 @@ private:
 
     [[nodiscard]] data_channel_state live_state() const {
         return static_cast<data_channel_state>(webcpp_webrtc_ready_state(channel_.as_handle()));
+    }
+
+    // The browser's attributes of the channel: what it was created with, or what the peer
+    // announced.
+    void read_attributes() {
+        const emscripten::val attributes =
+            take(webcpp_webrtc_channel_attributes(channel_.as_handle()));
+        const auto limit = [](const emscripten::val& value) {
+            const int read = value.as<int>();
+            return read < 0 ? std::nullopt
+                            : std::optional<std::uint16_t>(static_cast<std::uint16_t>(read));
+        };
+        ordered_ = attributes["ordered"].as<bool>();
+        max_packet_life_time_ = limit(attributes["maxPacketLifeTime"]);
+        max_retransmits_ = limit(attributes["maxRetransmits"]);
+        js_copy(attributes["protocol"], protocol_);
+        negotiated_ = attributes["negotiated"].as<bool>();
     }
 
     // A message: past max_message_size, or past the receive budget with its record, the channel
@@ -540,6 +579,11 @@ private:
     Executor executor_;
     Allocator allocator_;
     string_type label_;
+    string_type protocol_;
+    std::optional<std::uint16_t> max_packet_life_time_;
+    std::optional<std::uint16_t> max_retransmits_;
+    bool ordered_ = true;
+    bool negotiated_ = false;
     webcpp::asio::browser::bridge* bridge_ = nullptr;
     std::uint64_t key_ = 0;
     emscripten::val channel_ = emscripten::val::undefined();

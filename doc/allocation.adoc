@@ -15,9 +15,9 @@ and a connection's channels use its own:
 
 * *the object's state* is allocated through the object's allocator, on the
   executor: the connection and its channels, the queues of candidates and of
-  incoming channels, and the text of descriptions, candidates and labels,
-  which the outputs carry, `session_description` and `ice_candidate`
-  holding their strings in it;
+  incoming channels, the text of a channel's label and protocol, and that of
+  descriptions and candidates, which the outputs carry,
+  `session_description` and `ice_candidate` holding their strings in it;
 * *an operation's state* is allocated through its completion handler's
   associated allocator, as Asio's operations are, so a program that binds an
   allocator to its handlers, or uses one with its coroutines, controls that
