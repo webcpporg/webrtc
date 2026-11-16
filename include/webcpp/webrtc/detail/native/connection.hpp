@@ -120,17 +120,17 @@ public:
             std::allocator_traits<Allocator>::template rebind_alloc<string_type>;
         using pointers_allocator =
             std::allocator_traits<Allocator>::template rebind_alloc<const char*>;
-        std::vector<string_type, strings_allocator> urls{strings_allocator(allocator_)};
+        std::vector<string_type, strings_allocator> server_urls{strings_allocator(allocator_)};
         for (const ice_server& server : config.ice_servers) {
             for (const std::string_view url : server.urls) {
-                urls.push_back(ice_url(url, server.username, server.credential));
+                server_urls.push_back(ice_url(url, server.username, server.credential));
             }
         }
-        if (!fits_int(urls.size())) {
+        if (!fits_int(server_urls.size())) {
             return make_error_code(error::type_error);
         }
         std::vector<const char*, pointers_allocator> pointers{pointers_allocator(allocator_)};
-        for (const string_type& url : urls) {
+        for (const string_type& url : server_urls) {
             pointers.push_back(url.c_str());
         }
         const string_type bind(config.bind_address, text_allocator());

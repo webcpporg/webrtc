@@ -4,7 +4,7 @@
 // accompanying file LICENSE_1_0.txt or copy at
 // https://www.boost.org/LICENSE_1_0.txt)
 
-= webrtc: WebRTC data channels in Asio's model for {cpp}
+= webrtc: WebRTC data channels in Asio's model
 :toc: left
 :toclevels: 1
 :idprefix:

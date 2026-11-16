@@ -42,10 +42,12 @@ webcpp.original node ;
 # linked by every native build, and its explicit target native-program, which
 # the native driven test runs and the emscripten run meets. A driven test is
 # built again at every run, so it reuses that program rather than compile
-# native.cpp each time. libdatachannel's threads need threading=multi.
+# native.cpp each time. libdatachannel's threads need threading=multi. It
+# holds more sections than MSVC's object format allows by default (C1128):
+# /bigobj.
 webcpp.link native : native.cpp
   : <library>/webcpp/webrtc//webrtc <library>/webcpp/beast//sockets
-    <library>/webcpp//boost_json <threading>multi
+    <library>/webcpp//boost_json <threading>multi <toolset>msvc:<cxxflags>/bigobj
   : native ;
 
 webcpp.drive interop_native : .//native-program : <webcpp-drive-timeout>120
