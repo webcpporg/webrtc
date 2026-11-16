@@ -1,0 +1,3 @@
+{
+    "nodiscard-results": "a dropped result, a peer connection or a data channel made, would pass as one in use"
+}

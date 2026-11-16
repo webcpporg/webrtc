@@ -245,8 +245,8 @@ public:
      @return `operation_not_supported` for a `max_packet_life_time` of 0 under the policy that
      refuses it; the W3C's refusals; nothing once made.
     */
-    boost::system::result<data_channel> create_data_channel(std::string_view label,
-                                                            const data_channel_init& init) {
+    [[nodiscard]] boost::system::result<data_channel> create_data_channel(
+        std::string_view label, const data_channel_init& init) {
         if (init.max_packet_life_time && init.max_retransmits) {
             return make_error_code(error::type_error);
         }

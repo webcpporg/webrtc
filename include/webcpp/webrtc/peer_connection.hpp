@@ -93,7 +93,7 @@ public:
      browser, `operation_not_supported` for a `configuration::bind_address`, which it cannot
      honour, under the default policy.
     */
-    static boost::system::result<basic_peer_connection> make(
+    [[nodiscard]] static boost::system::result<basic_peer_connection> make(
         runtime& rt, const Executor& executor, const configuration& config,
         const options& opts = options(), const Allocator& allocator = Allocator()) {
         // The slot is moved into the state below, which a const slot could not be: through
@@ -348,8 +348,8 @@ public:
      `error::invalid_state` on a closed connection; natively `operation_not_supported` for a
      `max_packet_life_time` of 0 under the default policy (the table of differences).
     */
-    boost::system::result<data_channel> create_data_channel(std::string_view label,
-                                                            const data_channel_init& init = {}) {
+    [[nodiscard]] boost::system::result<data_channel> create_data_channel(
+        std::string_view label, const data_channel_init& init = {}) {
         return state_->create_data_channel(label, init);
     }
 

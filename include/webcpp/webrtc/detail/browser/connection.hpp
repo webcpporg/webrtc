@@ -255,8 +255,8 @@ public:
     void accept_data_channel(pending<data_channel>& op) { channels_.wait(op); }
 
     /** Creates a channel, the W3C's `createDataChannel`. */
-    boost::system::result<data_channel> create_data_channel(std::string_view label,
-                                                            const data_channel_init& init) {
+    [[nodiscard]] boost::system::result<data_channel> create_data_channel(
+        std::string_view label, const data_channel_init& init) {
         if (init.max_packet_life_time && init.max_retransmits) {
             return make_error_code(error::type_error);
         }
