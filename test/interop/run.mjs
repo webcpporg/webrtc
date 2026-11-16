@@ -265,18 +265,22 @@ const other = role => (role === 'offer' ? 'answer' : 'offer')
 const due = role => (role === 'offer' ? 'pong' : 'ping')
 
 // The candidates the page's peer sent are those Chromium gathered, in order, the end included:
-// none is lost on its way through the page's backend. They hold one on 127.0.0.1, and no mDNS
-// name: the two switches took effect.
+// none is lost on its way through the page's backend. They hold no mDNS name: that switch took
+// effect. Whether they hold one on 127.0.0.1 is returned: Chromium does not list the loopback
+// interface in every gathering, even with --allow-loopback-in-peer-connection (measured on the
+// CI, run 43893730166: one meeting of four gathered only the runner's private address, and
+// connected over it), so that switch is judged over the whole run (runBrowser).
 const checkGathered = (lines, who, gathered) => {
     const prefix = `${who}: sent the candidate `
     const sent = lines.filter(line => line.startsWith(prefix) || line === `${who}: sent the end of its candidates`)
         .map(line => (line.startsWith(prefix) ? line.slice(prefix.length) : null))
     assert.deepEqual(sent, gathered, `${who} did not send the candidates Chromium gathered`)
     const addresses = sentAddresses(lines, who)
-    assert.ok(addresses.includes('127.0.0.1'), 'the page sent no candidate on 127.0.0.1:'
-        + ` --allow-loopback-in-peer-connection had no effect (${addresses})`)
     assert.ok(!addresses.some(address => address.endsWith('.local')), 'the page sent mDNS'
         + ` candidates: --disable-features=WebRtcHideLocalIpsWithMdns had no effect (${addresses})`)
+    const loopback = addresses.includes('127.0.0.1')
+    if (!loopback) console.log(`${who}: no candidate on 127.0.0.1 this time, only ${addresses}`)
+    return loopback
 }
 
 // The native peer, in `role`, meets the page's peer in the other role, in `variant`, through a
@@ -312,11 +316,12 @@ const meet = async (base, variant, role) => {
         assert.deepEqual(problems, [], 'Chromium reported an exception or a console.error')
         assert.equal(report.variant, variant, `the page loaded ${report.variant}, not ${variant}`)
         checkPeer(report.lines, who, due(other(role)))
-        checkGathered(report.lines, who, report.gathered)
+        const loopback = checkGathered(report.lines, who, report.gathered)
         await ended(peer, exchange)
         checkNative(peer.lines, `native ${role}`, due(role))
         await ended(relay, leaving)
         console.log(`interop browser (${variant}): the native ${role} and the page's ${other(role)} passed`)
+        return loopback
     } finally {
         await context.close()
         peer.stop()
@@ -338,12 +343,17 @@ const runBrowser = async () => {
         ],
     })
     console.log(`interop browser: ${executable}, version ${left.browser.version()}`)
+    const loopbacks = []
     for (const variant of ['jspi', 'asyncify']) {
         // The lane's case: the native peer sends "ping", the page answers "pong".
-        await meet(base, variant, 'offer')
+        loopbacks.push(await meet(base, variant, 'offer'))
         // And the other way: the page offers and sends "ping", the native peer answers.
-        await meet(base, variant, 'answer')
+        loopbacks.push(await meet(base, variant, 'answer'))
     }
+    // --allow-loopback-in-peer-connection took effect: some meeting's page sent a candidate on
+    // 127.0.0.1 (checkGathered says why not each).
+    assert.ok(loopbacks.some(Boolean), 'no meeting\'s page sent a candidate on 127.0.0.1:'
+        + ' --allow-loopback-in-peer-connection had no effect')
     console.log('interop browser: passed')
 }
 
