@@ -28,5 +28,7 @@ exceptions on and off.
 * Added a runtime that holds libdatachannel's threads and caps connections.
 * Added errors as values, in the category `webcpp.webrtc` and Asio's codes,
 and `+[[nodiscard]]+` on every function that returns a `boost::system::result`.
+* Added a peer connection's `max_message_size()`, the largest message a
+channel sends.
 * Added the library's page, with its examples, guarantees and differences.
 // end::unreleased[]

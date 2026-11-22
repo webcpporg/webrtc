@@ -25,6 +25,7 @@
 
 #include <boost/system/result.hpp>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -311,6 +312,23 @@ public:
     /** Whether a remote description was applied. */
     [[nodiscard]] bool has_remote_description() const {
         return pc_ >= 0 && rtcGetRemoteDescription(pc_, nullptr, 0) > 0;
+    }
+
+    /**
+     The largest message a channel sends: the smaller of `options::max_message_size` and the
+     peer's limit libdatachannel read from the remote description (`rtcGetRemoteMaxMessageSize`,
+     the limit `rtcMaxMessageSize` gives each channel's sends); nothing before a remote
+     description is applied.
+    */
+    [[nodiscard]] std::optional<std::size_t> max_message_size() const {
+        if (!has_remote_description()) {
+            return std::nullopt;
+        }
+        const int peer = rtcGetRemoteMaxMessageSize(pc_);
+        if (peer <= 0) {
+            return std::nullopt;
+        }
+        return std::min(options_.max_message_size, static_cast<std::size_t>(peer));
     }
 
     /** The connection's state. */

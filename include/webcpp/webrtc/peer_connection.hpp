@@ -370,6 +370,22 @@ public:
     [[nodiscard]] bool has_remote_description() const { return state_->has_remote_description(); }
 
     /**
+     The largest message a channel of this connection sends, the most `data_channel::send` lets
+     through: the smaller of `options::max_message_size` and the peer's limit, which the peer
+     announces in its description (`a=max-message-size`, RFC 8841; 65,536 when it announces none
+     and no limit when it announces 0), as the W3C's `sctp.maxMessageSize` reports it.
+
+     It is nothing before the peer's limit is known: natively until a remote description is
+     applied (libdatachannel's `rtcGetRemoteMaxMessageSize`), in the browser while the connection
+     has no SCTP transport (`sctp` is null until an offer and its answer negotiated data channels).
+
+     @return The size in bytes, or nothing before the peer's limit is known.
+    */
+    [[nodiscard]] std::optional<std::size_t> max_message_size() const {
+        return state_->max_message_size();
+    }
+
+    /**
      The connection's state, the W3C's `connectionState`.
 
      @return The state.

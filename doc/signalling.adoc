@@ -33,7 +33,11 @@ negotiation. The W3C's `createOffer()`, `createAnswer()` and
 
 `local_description()` is the local description as it is now, with the
 candidates gathered so far; `has_remote_description()` says whether a remote
-one was applied.
+one was applied. `max_message_size()` is the largest message a channel of the
+connection sends, the smaller of `options::max_message_size` and the limit
+the peer announced, as the W3C's `sctp.maxMessageSize`; it is nothing before
+that limit is known: natively until a remote description is applied, in the
+browser until the connection has its SCTP transport.
 
 [#webrtc-signalling-candidates]
 === Candidates

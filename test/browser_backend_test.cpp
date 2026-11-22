@@ -13,7 +13,8 @@
 // closes the channels. The channel: its attributes, as created and as announced, its refusals to
 // send leave it open, the buffered-amount wait, messages kept before the first receive, a message
 // past max_message_size and the receive budget close it, its owner's close, the peer's close, and
-// a channel accepted after its messages arrived, past the backlog closed at once.
+// a channel accepted after its messages arrived, past the backlog closed at once. The connection's
+// max_message_size() follows its SCTP transport's maxMessageSize.
 
 #include <webcpp/webrtc/data_channel.hpp>
 #include <webcpp/webrtc/peer_connection.hpp>
@@ -382,7 +383,7 @@ void a_close_while_a_notification_is_in_flight() {
     std::optional<error_code> candidate;
     pc.async_wait_ice_candidate(
         [&](error_code ec, const connection::ice_candidate&) { candidate = ec; });
-    const val fake = last_connection();
+    val fake = last_connection();
     set_state(fake, "connectionState", "connected", "onconnectionstatechange");
     val end = val::object();
     end.set("candidate", val::null());
@@ -505,6 +506,33 @@ void a_channels_attributes() {
     BOOST_TEST(!accepted->negotiated());
 }
 
+// max_message_size() is the smaller of options::max_message_size and the SCTP transport's
+// maxMessageSize, the limit a send checks; nothing while the connection has no SCTP transport or
+// one whose size cannot be read, and options::max_message_size for Infinity.
+void the_max_message_size_follows_the_sctp_transport() {
+    asio::io_context io;
+    webrtc::runtime rt;
+    auto made = connection::make(rt, io.get_executor(), no_servers);
+    if (!BOOST_TEST(made.has_value())) {
+        return;
+    }
+    val fake = last_connection();
+    fake.set("sctp", val::null());
+    BOOST_TEST(!made->max_message_size());
+    fake.set("sctp", val::object());
+    BOOST_TEST(!made->max_message_size());
+    fake["sctp"].set("maxMessageSize", val(0));
+    BOOST_TEST(!made->max_message_size());
+    fake["sctp"].set("maxMessageSize", val(16384));
+    BOOST_TEST(made->max_message_size() == std::optional<std::size_t>(16384));
+    fake["sctp"].set("maxMessageSize", val(65536));
+    BOOST_TEST(made->max_message_size() == std::optional<std::size_t>(65536));
+    fake["sctp"].set("maxMessageSize", val(1073741823));
+    BOOST_TEST(made->max_message_size() == std::optional<std::size_t>(262144));
+    fake["sctp"].set("maxMessageSize", val::global("Infinity"));
+    BOOST_TEST(made->max_message_size() == std::optional<std::size_t>(262144));
+}
+
 // A send is refused, and the channel stays open, when it is not open, past max_message_size or
 // the peer's limit, and past max_buffered_amount; the buffered-amount wait completes with the
 // browser's event once the amount is at the threshold.
@@ -548,6 +576,7 @@ void sends_and_their_refusals() {
     const std::string seventeen(17, 'x');
     BOOST_TEST(dc.send_text(seventeen) == webrtc::error::message_too_large);
     last_connection()["sctp"].set("maxMessageSize", val(6));
+    BOOST_TEST(made->max_message_size() == std::optional<std::size_t>(6));
     BOOST_TEST(dc.send_text("seven!!") == webrtc::error::message_too_large);
     last_connection()["sctp"].set("maxMessageSize", val(65536));
     // 60 queued and 4 sent make the bound exactly; one byte more passes it.
@@ -935,6 +964,7 @@ int main() {
     a_close_while_a_notification_is_in_flight();
     cancelled_promises();
     a_channels_attributes();
+    the_max_message_size_follows_the_sctp_transport();
     sends_and_their_refusals();
     messages_and_the_buffer();
     the_budget_or_the_size(false);

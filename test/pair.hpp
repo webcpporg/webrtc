@@ -158,11 +158,16 @@ void negotiate(PeerConnection& a, PeerConnection& b, trickle<PeerConnection>& ab
 struct pair {
     explicit pair(const webrtc::options& opts = webrtc::options(),
                   const webrtc::runtime_options& rt_opts = webrtc::runtime_options())
+        : pair(opts, opts, rt_opts) {}
+
+    /** Two peers made with options of their own, `a_opts` for `a` and `b_opts` for `b`. */
+    pair(const webrtc::options& a_opts, const webrtc::options& b_opts,
+         const webrtc::runtime_options& rt_opts = webrtc::runtime_options())
         : rt(rt_opts) {
         auto first =
-            webrtc::peer_connection::make(rt, io.get_executor(), loopback_configuration(), opts);
+            webrtc::peer_connection::make(rt, io.get_executor(), loopback_configuration(), a_opts);
         auto second =
-            webrtc::peer_connection::make(rt, io.get_executor(), loopback_configuration(), opts);
+            webrtc::peer_connection::make(rt, io.get_executor(), loopback_configuration(), b_opts);
         require(BOOST_TEST(first.has_value()));
         require(BOOST_TEST(second.has_value()));
         a.emplace(std::move(*first));

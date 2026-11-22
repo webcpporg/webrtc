@@ -314,6 +314,25 @@ public:
         return !pc_.isUndefined() && webcpp_webrtc_has_remote(pc_.as_handle());
     }
 
+    /**
+     The largest message a channel sends: the smaller of `options::max_message_size` and the
+     SCTP transport's `maxMessageSize` (`Infinity` for no limit), the limit each channel's sends
+     check; nothing while the connection has no SCTP transport (`sctp` is null).
+    */
+    [[nodiscard]] std::optional<std::size_t> max_message_size() const {
+        if (pc_.isUndefined()) {
+            return std::nullopt;
+        }
+        const double peer = webcpp_webrtc_peer_max_message_size(pc_.as_handle());
+        if (!(peer > 0)) {
+            return std::nullopt;
+        }
+        if (peer >= static_cast<double>(options_.max_message_size)) {
+            return options_.max_message_size;
+        }
+        return static_cast<std::size_t>(peer);
+    }
+
     /** The connection's state. */
     [[nodiscard]] peer_connection_state state() const noexcept { return state_.current(); }
 

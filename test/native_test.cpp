@@ -6,7 +6,8 @@
 
 // Two native peers in one process over the loopback, through libdatachannel's C API: the
 // exchange, the channel's messages both ways, the cases the semantics name, a channel's attributes,
-// and the errors. The Jamfile builds it as the build asks and without exceptions.
+// the errors, and the largest message a connection's channels send. The Jamfile builds it as the
+// build asks and without exceptions.
 
 #include <webcpp/webrtc.hpp>
 
@@ -381,6 +382,38 @@ void bounds() {
     BOOST_TEST(later == std::optional<std::size_t>(16));
 }
 
+// max_message_size() is nothing before a remote description, then the smaller of each end's own
+// options::max_message_size and the limit the peer announced, the limit its sends meet: b, which
+// announces 256 KiB, sends at most a's 32 KiB, and a sends at most its own 32 KiB.
+void the_max_message_size() {
+    webrtc::options small;
+    small.max_message_size = std::size_t{32} * 1024;
+    pair p(small, webrtc::options());
+    BOOST_TEST(!p.a->max_message_size());
+    BOOST_TEST(!p.b->max_message_size());
+    std::optional<webrtc::data_channel> ca;
+    std::optional<webrtc::data_channel> cb;
+    bool checked = false;
+    webcpp::test::open_channel(p, "size", [&](webrtc::data_channel a, webrtc::data_channel b) {
+        ca.emplace(std::move(a));
+        cb.emplace(std::move(b));
+        const std::optional<std::size_t> limit = small.max_message_size;
+        BOOST_TEST(p.a->max_message_size() == limit);
+        BOOST_TEST(p.b->max_message_size() == limit);
+        const std::vector<char> fits(small.max_message_size, 'x');
+        const std::vector<char> over(small.max_message_size + 1, 'x');
+        BOOST_TEST(!ca->send(asio::buffer(fits)));
+        BOOST_TEST(ca->send(asio::buffer(over)) == webrtc::error::message_too_large);
+        BOOST_TEST(!cb->send(asio::buffer(fits)));
+        BOOST_TEST(cb->send(asio::buffer(over)) == webrtc::error::message_too_large);
+        checked = true;
+        p.a->close();
+        p.b->close();
+    });
+    p.run();
+    BOOST_TEST(checked);
+}
+
 // close() fires no state change: the pending wait ends with operation_aborted, the state reads
 // closed, the channels close with error::closed, the peer's channel sees its close, and a wait
 // started afterwards completes with error::closed.
@@ -519,6 +552,7 @@ int main() {
     a_negotiated_channel();
     errors_as_values();
     bounds();
+    the_max_message_size();
     close_fires_no_state_change();
     a_channel_closed_by_its_owner();
     destruction_and_moves();
