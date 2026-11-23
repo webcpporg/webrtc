@@ -15,18 +15,22 @@ Natively webrtc wraps https://github.com/paullouisageneau/libdatachannel[libdata
 libraries or in the standard library, and libdatachannel is the smallest
 complete implementation of it: data channels without a media engine, ICE
 through libjuice, SCTP through usrsctp, DTLS on the same source-built OpenSSL
-as webcpp::asio's TLS. webrtc uses it unmodified, as a dependency, and copies
-none of its files: the superproject pins it at commit `6b1e2e6`, with its
-nested sources at the commits `tools/libdatachannel/pin.json` lists, and
-builds it from them (<<webrtc-building>>). Nothing of it appears in a public
-header: a program never names libdatachannel.
+as webcpp::asio's TLS. webrtc uses it as a dependency, and copies none of its
+files: the superproject pins it at commit `6b1e2e6`, with its nested sources at
+the commits `tools/libdatachannel/pin.json` lists, and builds it from them
+(<<webrtc-building>>), with the corrections of `tools/libdatachannel/patches`
+applied to the build's copy: two races of 0.24.6 that failed a connection
+whose DTLS or SCTP transport started while the answer was being applied.
+Nothing of it appears in a public header: a program never names
+libdatachannel.
 
 libdatachannel is distributed under the Mozilla Public License 2.0, and its
 nested dependencies under their own licences, which the superproject's
 third-party table lists. MPL's copyleft is per file: while libdatachannel is
-used unmodified, it reaches none of webcpp's files, which are under the Boost
-Software License alone. A program that distributes a native build of webrtc
-distributes libdatachannel with it, and keeps its licence and notices.
+changed only by those patches, themselves under the MPL, it reaches none of
+webcpp's own files, which are under the Boost Software License alone. A
+program that distributes a native build of webrtc distributes libdatachannel
+with it, and keeps its licence and notices.
 
 [#webrtc-native-threads]
 === Threads
