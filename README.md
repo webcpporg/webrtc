@@ -58,5 +58,6 @@ libs/webrtc/doc` builds it into `doc/html/index.html`.
 
 Distributed under the [Boost Software License, Version 1.0](LICENSE_1_0.txt).
 Natively webrtc uses libdatachannel, under the Mozilla Public License 2.0,
-with the superproject's patches of `tools/libdatachannel/patches` (under the
-MPL too), and its nested dependencies under their own licences.
+with the superproject's patches of `tools/libdatachannel/patches` (each under
+the licence of the files it changes), and its nested dependencies under their
+own licences.
