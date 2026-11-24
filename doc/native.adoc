@@ -20,15 +20,18 @@ files: the superproject pins it at commit `6b1e2e6`, with its nested sources at
 the commits `tools/libdatachannel/pin.json` lists, and builds it from them
 (<<webrtc-building>>), with the corrections of `tools/libdatachannel/patches`
 applied to the build's copy: two races of 0.24.6 that failed a connection
-whose DTLS or SCTP transport started while the answer was being applied.
+whose DTLS or SCTP transport started while the answer was being applied, and
+two defects, of its SCTP cleanup and of the usrsctp it pins, that hung a
+process making a second <<webrtc-runtime,runtime>> once the first was gone.
 Nothing of it appears in a public header: a program never names
 libdatachannel.
 
 libdatachannel is distributed under the Mozilla Public License 2.0, and its
 nested dependencies under their own licences, which the superproject's
 third-party table lists. MPL's copyleft is per file: while libdatachannel is
-changed only by those patches, themselves under the MPL, it reaches none of
-webcpp's own files, which are under the Boost Software License alone. A
+changed only by those patches, each under the licence of the files it changes
+(the MPL, or usrsctp's BSD 3-Clause), it reaches none of webcpp's own files,
+which are under the Boost Software License alone. A
 program that distributes a native build of webrtc distributes libdatachannel
 with it, and keeps its licence and notices.
 

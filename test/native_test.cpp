@@ -78,11 +78,11 @@ public:
         BOOST_TEST((received_b_ == received{{4, false}, {2, true}}));
         BOOST_TEST((received_a_ == received{{4, true}}));
         BOOST_TEST_EQ(at_b_.size(), 6u);
-        BOOST_TEST(at_b_.substr(4) == "ab");
+        BOOST_TEST(at_b_.size() >= 4 && at_b_.substr(4) == "ab");
         BOOST_TEST(at_a_ == "pong");
         BOOST_TEST(closed_a_);
         BOOST_TEST(closed_b_);
-        BOOST_TEST(cb_.value().ready_state() == webrtc::data_channel_state::closed);
+        BOOST_TEST(cb_ && cb_->ready_state() == webrtc::data_channel_state::closed);
         const auto local = p_.a->local_description();
         BOOST_TEST(local && local->type == webrtc::sdp_type::offer);
         BOOST_TEST(local && local->sdp.find("a=candidate") != std::string::npos);
@@ -454,7 +454,7 @@ void a_channel_closed_by_its_owner() {
     p.run();
     BOOST_TEST(receive && *receive == asio::error::operation_aborted);
     BOOST_TEST(close_wait && !*close_wait);
-    BOOST_TEST(ca->ready_state() == webrtc::data_channel_state::closed);
+    BOOST_TEST(ca && ca->ready_state() == webrtc::data_channel_state::closed);
 }
 
 // Destruction with a wait pending runs its handler once, with operation_aborted; a move carries
